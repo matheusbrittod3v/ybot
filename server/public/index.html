@@ -486,17 +486,33 @@
           <!-- Seção de Cookies do YouTube (Bypass Anti-Bot na VPS) -->
           <div class="settings-divider">
             <h4>COOKIES DO YOUTUBE (BYPASS ANTI-BOT NA VPS)</h4>
-            <small>O sistema já usa o cliente mobile Android para contornar bloqueios. Se algum vídeo exigir login adicional ("Sign in to confirm you're not a bot"), cole os cookies aqui.</small>
+            <small>Em servidores VPS/Datacenter, o YouTube exige cookies de uma conta para liberar downloads sem bloqueio de robô ("Sign in to confirm you're not a bot").</small>
           </div>
 
           <div class="form-group">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
               <span id="cookies-status-badge" class="badge-status">Checando cookies...</span>
               <button type="button" class="btn-small-danger hidden" id="btn-delete-cookies">Remover cookies.txt</button>
             </div>
-            <textarea id="cfg-cookies-text" rows="3" placeholder="Cole aqui o conteúdo do seu cookies.txt (formato Netscape) se desejar..."></textarea>
-            <div style="display: flex; justify-content: flex-end; margin-top: 6px;">
-              <button type="button" class="btn-small-amber" id="btn-save-cookies">Salvar Cookies</button>
+
+            <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+              <label class="btn-upload-file" style="flex: 1; justify-content: center;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="17 8 12 3 7 8"></polyline>
+                  <line x1="12" y1="3" x2="12" y2="15"></line>
+                </svg>
+                <span>Fazer Upload do arquivo cookies.txt</span>
+                <input type="file" id="input-cookies-file" accept=".txt" style="display:none">
+              </label>
+            </div>
+
+            <textarea id="cfg-cookies-text" rows="3" placeholder="Ou cole o conteúdo do cookies.txt aqui (formato Netscape)..."></textarea>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px;">
+              <small style="color: var(--text-dim);">
+                💡 Dica: Use a extensão <strong>"Get cookies.txt LOCALLY"</strong> no seu navegador após abrir o YouTube.
+              </small>
+              <button type="button" class="btn-small-amber" id="btn-save-cookies">Salvar Texto de Cookies</button>
             </div>
           </div>
 

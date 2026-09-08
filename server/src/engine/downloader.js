@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { spawn } from 'child_process';
-import { db, MEDIA_DIR } from '../db.js';
+import { db, DATA_DIR, MEDIA_DIR } from '../db.js';
 
 class DownloaderEngine {
   constructor() {
@@ -130,9 +130,12 @@ class DownloaderEngine {
         '--extractor-args', 'youtube:player_client=android,ios,web'
       ];
 
-      const cookiesPath = path.join(MEDIA_DIR, '../cookies.txt');
-      if (fs.existsSync(cookiesPath)) {
+      const cookiesPath = path.join(DATA_DIR, 'cookies.txt');
+      if (fs.existsSync(cookiesPath) && fs.statSync(cookiesPath).size > 0) {
+        console.log(`[Downloader] Utilizando cookies.txt para autenticação anti-bot`);
         args.push('--cookies', cookiesPath);
+      } else {
+        console.log(`[Downloader] Nenhum cookies.txt ativo. Usando modo anônimo.`);
       }
 
       args.push('-o', targetFile, item.url);

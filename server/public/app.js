@@ -744,6 +744,32 @@ function setupEventListeners() {
     });
   }
 
+  const elInputCookiesFile = document.getElementById('input-cookies-file');
+  if (elInputCookiesFile) {
+    elInputCookiesFile.addEventListener('change', async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      try {
+        showToast('Enviando cookies.txt para a VPS...', 'info');
+        const formData = new FormData();
+        formData.append('cookiesFile', file);
+        const res = await fetch('/api/cookies', {
+          method: 'POST',
+          body: formData
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast('Arquivo cookies.txt instalado com sucesso!', 'success');
+          checkCookiesStatus();
+        } else {
+          showToast(data.error || 'Erro ao enviar arquivo de cookies', 'error');
+        }
+      } catch (err) {
+        showToast('Falha no upload do cookies.txt', 'error');
+      }
+    });
+  }
+
   // Drawer de logs
   elBtnOpenLogs.addEventListener('click', () => elDrawerLogs.classList.remove('hidden'));
   elBtnCloseLogs.addEventListener('click', () => elDrawerLogs.classList.add('hidden'));

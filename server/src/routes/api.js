@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import path from 'path';
 import fs from 'fs';
 import multer from 'multer';
-import { db, THUMBS_DIR } from '../db.js';
+import { db, DATA_DIR, THUMBS_DIR } from '../db.js';
 import { streamer } from '../engine/streamer.js';
 import { downloader } from '../engine/downloader.js';
 import { fetchVideoInfo } from '../utils/youtube.js';
@@ -11,6 +11,12 @@ import { getSystemStats } from '../utils/system.js';
 import { youtubeUpdater } from '../utils/youtube-updater.js';
 
 const router = express.Router();
+
+// Multer para cookies.txt
+const uploadCookie = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 2 * 1024 * 1024 }
+});
 
 // Configuração do Multer para upload de thumbnails personalizadas
 const storage = multer.diskStorage({
@@ -291,7 +297,7 @@ router.post('/history/clear', (req, res) => {
 
 // Gerenciamento de Cookies do YouTube (Anti-Bot na VPS)
 router.get('/cookies', (req, res) => {
-  const cookiesPath = path.join(db.data ? path.resolve(process.env.DATA_DIR || './data') : './data', 'cookies.txt');
+  const cookiesPath = path.join(DATA_DIR, 'cookies.txt');
   const exists = fs.existsSync(cookiesPath);
   let size = 0;
   if (exists) {
@@ -302,21 +308,26 @@ router.get('/cookies', (req, res) => {
   res.json({ success: true, exists, size });
 });
 
-router.post('/cookies', (req, res) => {
+router.post('/cookies', uploadCookie.single('cookiesFile'), (req, res) => {
+  const cookiesPath = path.join(DATA_DIR, 'cookies.txt');
+
+  if (req.file) {
+    fs.writeFileSync(cookiesPath, req.file.buffer.toString('utf-8'));
+    console.log(`[Cookies] Arquivo cookies.txt enviado via upload salvo na VPS (${req.file.size} bytes)!`);
+    return res.json({ success: true, message: 'Arquivo cookies.txt enviado e salvo com sucesso!' });
+  }
+
   const { cookies } = req.body;
   if (!cookies || typeof cookies !== 'string' || !cookies.trim()) {
     return res.status(400).json({ success: false, error: 'Conteúdo de cookies vazio' });
   }
-  const dataDir = path.resolve(process.env.DATA_DIR || './data');
-  const cookiesPath = path.join(dataDir, 'cookies.txt');
   fs.writeFileSync(cookiesPath, cookies.trim(), 'utf-8');
   console.log(`[Cookies] Arquivo cookies.txt salvo na VPS com sucesso (${cookies.length} bytes)!`);
   res.json({ success: true, message: 'Arquivo cookies.txt salvo com sucesso!' });
 });
 
 router.delete('/cookies', (req, res) => {
-  const dataDir = path.resolve(process.env.DATA_DIR || './data');
-  const cookiesPath = path.join(dataDir, 'cookies.txt');
+  const cookiesPath = path.join(DATA_DIR, 'cookies.txt');
   if (fs.existsSync(cookiesPath)) {
     fs.unlinkSync(cookiesPath);
     console.log('[Cookies] Arquivo cookies.txt removido.');
