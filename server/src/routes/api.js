@@ -418,9 +418,18 @@ router.put('/queue/:id', async (req, res) => {
 router.delete('/queue/:id', (req, res) => {
   const { id } = req.params;
   downloader.cancelActiveDownload(id);
-  db.removeFromQueue(id);
-  // Reavalia a fila após remoção
+
+  // Se o item deletado estiver tocando agora no ar, avança imediatamente para o próximo da fila!
+  if (streamer.currentItem && streamer.currentItem.id === id) {
+    console.log(`[Streamer] Item ativo no ar ("${streamer.currentItem.title}") foi removido da grade. Avançando para o próximo...`);
+    streamer.skipCurrent();
+  } else {
+    db.removeFromQueue(id);
+  }
+
+  // Reavalia a fila após remoção e notifica painel
   downloader.checkQueue();
+  streamer.broadcast('queue_updated', { queue: db.getQueue() });
   res.json({ success: true });
 });
 

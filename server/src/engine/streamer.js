@@ -291,9 +291,9 @@ class StreamerEngine {
       '-ar', '44100'
     ];
 
-    // Adiciona marca d'água opcional TV Braza
+    // Adiciona marca d'água opcional TV Braza com espaçamento elegante e profissional
     if (settings.enableWatermark) {
-      args.push('-vf', `drawbox=x=w-230:y=30:w=190:h=45:color=0x000000@0.6:t=fill,drawtext=text='TV BRAZA':fontcolor=0xf59e0b:fontsize=28:x=w-215:y=40,drawtext=text='AO VIVO':fontcolor=0xffffff:fontsize=18:x=w-95:y=47`);
+      args.push('-vf', `drawbox=x=w-320:y=28:w=280:h=46:color=0x000000@0.65:t=fill,drawtext=text='TV BRAZA':fontcolor=0xf59e0b:fontsize=24:x=w-305:y=38,drawbox=x=w-168:y=34:w=2:h=34:color=0xffffff@0.25:t=fill,drawbox=x=w-150:y=45:w=10:h=10:color=0xef4444:t=fill,drawtext=text='AO VIVO':fontcolor=0xffffff:fontsize=17:x=w-132:y=41`);
     }
 
     if (rtmpTarget) {
@@ -304,15 +304,16 @@ class StreamerEngine {
 
     this.spawnFfmpeg(args, () => {
       // Callback executado ao terminar o vídeo
-      console.log(`[Streamer] VÍDEO CONCLUÍDO: "${item.title}". Limpando disco e avançando...`);
+      console.log(`[Streamer] VÍDEO CONCLUÍDO: "${item.title}". Limpando e iniciando próximo da fila...`);
       
-      // Remove o vídeo concluído da fila e apaga o arquivo do disco se for local
-      if (settings.autoDeleteFinished) {
-        db.archiveFinishedItem(item.id);
-      }
+      // Arquiva o item para removê-lo da fila ativa (e liberar disco se for local)
+      db.archiveFinishedItem(item.id);
 
       this.currentItem = null;
-      this.playNextInQueue();
+      // Inicia imediatamente o próximo vídeo disponível na fila
+      setTimeout(() => {
+        this.playNextInQueue();
+      }, 200);
     }, pipeSourceProc);
 
     // Se estiver transmitindo para o YouTube, garante a ativação pública da Live no YouTube Studio
@@ -511,22 +512,36 @@ class StreamerEngine {
       if (this.shouldRun && this.currentMode === 'STANDBY') {
         const queue = db.getQueue();
         const nextReady = queue.find(i => i.status === 'ready');
-        if (nextReady && nextReady.filePath && fs.existsSync(nextReady.filePath)) {
+        const isReadyToPlay = nextReady && (
+          (nextReady.streamMode === 'direct' && nextReady.url) ||
+          (nextReady.filePath && fs.existsSync(nextReady.filePath))
+        );
+        if (isReadyToPlay) {
           clearInterval(this.standbyCheckInterval);
           this.playNextInQueue();
         }
       }
-    }, 4000);
+    }, 2000);
   }
 
   skipCurrent() {
     if (this.currentMode === 'VIDEO' && this.currentItem) {
-      console.log(`[Streamer] Pulando vídeo atual manualmente: "${this.currentItem.title}"`);
+      console.log(`[Streamer] ⏭️ Pulando vídeo atual: "${this.currentItem.title}"`);
       const itemToSkip = this.currentItem;
+      this.currentItem = null;
       this.killProcess();
-      // Remove do disco imediatamente ao pular
+      // Remove da fila imediatamente ao pular
       db.archiveFinishedItem(itemToSkip.id);
-      this.playNextInQueue();
+      setTimeout(() => {
+        this.playNextInQueue();
+      }, 150);
+      return true;
+    } else if (this.currentMode === 'STANDBY') {
+      console.log('[Streamer] ⏭️ Forçando saída do Standby para o próximo vídeo da fila...');
+      this.killProcess();
+      setTimeout(() => {
+        this.playNextInQueue();
+      }, 150);
       return true;
     }
     return false;
