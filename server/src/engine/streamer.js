@@ -291,9 +291,15 @@ class StreamerEngine {
       '-ar', '44100'
     ];
 
-    // Adiciona marca d'água opcional TV Braza com espaçamento elegante e profissional
+    // Adiciona marca d'água opcional TV Braza com logo no canto inferior esquerdo e selo AO VIVO no canto superior direito
     if (settings.enableWatermark) {
-      args.push('-vf', `drawbox=x=w-320:y=28:w=280:h=46:color=0x000000@0.65:t=fill,drawtext=text='TV BRAZA':fontcolor=0xf59e0b:fontsize=24:x=w-305:y=38,drawbox=x=w-168:y=34:w=2:h=34:color=0xffffff@0.25:t=fill,drawbox=x=w-150:y=45:w=10:h=10:color=0xef4444:t=fill,drawtext=text='AO VIVO':fontcolor=0xffffff:fontsize=17:x=w-132:y=41`);
+      const logoPngPath = path.resolve(__dirname, '../../public/assets/logo.png');
+      if (fs.existsSync(logoPngPath)) {
+        const escapedLogoPath = logoPngPath.replace(/\\/g, '/').replace(/'/g, "'\\''");
+        args.push('-vf', `movie='${escapedLogoPath}',scale=260:-1[logo];[in][logo]overlay=x=35:y=H-h-35[v1];[v1]drawbox=x=w-320:y=28:w=280:h=46:color=0x000000@0.65:t=fill,drawtext=text='TV BRAZA':fontcolor=0xf59e0b:fontsize=24:x=w-305:y=38,drawbox=x=w-168:y=34:w=2:h=34:color=0xffffff@0.25:t=fill,drawbox=x=w-150:y=45:w=10:h=10:color=0xef4444:t=fill,drawtext=text='AO VIVO':fontcolor=0xffffff:fontsize=17:x=w-132:y=41`);
+      } else {
+        args.push('-vf', `drawbox=x=w-320:y=28:w=280:h=46:color=0x000000@0.65:t=fill,drawtext=text='TV BRAZA':fontcolor=0xf59e0b:fontsize=24:x=w-305:y=38,drawbox=x=w-168:y=34:w=2:h=34:color=0xffffff@0.25:t=fill,drawbox=x=w-150:y=45:w=10:h=10:color=0xef4444:t=fill,drawtext=text='AO VIVO':fontcolor=0xffffff:fontsize=17:x=w-132:y=41`);
+      }
     }
 
     if (rtmpTarget) {
