@@ -821,6 +821,255 @@ function setupEventListeners() {
   elBtnClearTerminal.addEventListener('click', () => {
     elTerminalBody.innerHTML = '';
   });
+
+  // Inicializa gerenciamento de Upload Manual de Vídeo
+  setupManualVideoUpload();
+}
+
+function setupManualVideoUpload() {
+  const elTabBtnYoutube = document.getElementById('tab-btn-youtube');
+  const elTabBtnUpload = document.getElementById('tab-btn-upload');
+  const elTabContentYoutube = document.getElementById('tab-content-youtube');
+  const elTabContentUpload = document.getElementById('tab-content-upload');
+
+  // Alternância de abas
+  if (elTabBtnYoutube && elTabBtnUpload) {
+    elTabBtnYoutube.addEventListener('click', () => {
+      elTabBtnYoutube.classList.add('active');
+      elTabBtnUpload.classList.remove('active');
+      if (elTabContentYoutube) elTabContentYoutube.classList.remove('hidden');
+      if (elTabContentUpload) elTabContentUpload.classList.add('hidden');
+    });
+
+    elTabBtnUpload.addEventListener('click', () => {
+      elTabBtnUpload.classList.add('active');
+      elTabBtnYoutube.classList.remove('active');
+      if (elTabContentUpload) elTabContentUpload.classList.remove('hidden');
+      if (elTabContentYoutube) elTabContentYoutube.classList.add('hidden');
+    });
+  }
+
+  // Elementos do Upload Manual
+  const elFormUploadVideo = document.getElementById('form-upload-video');
+  const elVideoDropzone = document.getElementById('video-dropzone');
+  const elInputVideoFile = document.getElementById('input-video-file');
+  const elDropzonePrompt = document.getElementById('dropzone-prompt');
+  const elDropzoneSelectedFile = document.getElementById('dropzone-selected-file');
+  const elSelectedFileName = document.getElementById('selected-file-name');
+  const elSelectedFileSize = document.getElementById('selected-file-size');
+  const elBtnClearVideoFile = document.getElementById('btn-clear-video-file');
+
+  const elInputManualTitle = document.getElementById('input-manual-title');
+  const elInputManualLiveTitle = document.getElementById('input-manual-live-title');
+  const elInputManualThumbFile = document.getElementById('input-manual-thumb-file');
+  const elBtnTriggerManualThumb = document.getElementById('btn-trigger-manual-thumb');
+  const elManualThumbName = document.getElementById('manual-thumb-name');
+
+  const elUploadProgressBox = document.getElementById('upload-video-progress-box');
+  const elUploadProgressBar = document.getElementById('upload-progress-bar');
+  const elUploadProgressPercent = document.getElementById('upload-progress-percent');
+  const elUploadProgressSpeed = document.getElementById('upload-progress-speed');
+  const elBtnSubmitUploadVideo = document.getElementById('btn-submit-upload-video');
+  const elSpinnerUploadVideo = document.getElementById('spinner-upload-video');
+
+  let selectedVideoFile = null;
+  let selectedThumbFile = null;
+
+  if (elVideoDropzone && elInputVideoFile) {
+    elVideoDropzone.addEventListener('click', (e) => {
+      if (e.target !== elBtnClearVideoFile && !elBtnClearVideoFile.contains(e.target)) {
+        elInputVideoFile.click();
+      }
+    });
+
+    elVideoDropzone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      elVideoDropzone.classList.add('dragover');
+    });
+
+    elVideoDropzone.addEventListener('dragleave', () => {
+      elVideoDropzone.classList.remove('dragover');
+    });
+
+    elVideoDropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      elVideoDropzone.classList.remove('dragover');
+      const file = e.dataTransfer.files?.[0];
+      if (file) handleVideoFileSelected(file);
+    });
+
+    elInputVideoFile.addEventListener('change', (e) => {
+      const file = e.target.files?.[0];
+      if (file) handleVideoFileSelected(file);
+    });
+  }
+
+  function handleVideoFileSelected(file) {
+    selectedVideoFile = file;
+    const mbSize = (file.size / 1024 / 1024).toFixed(1);
+    if (elSelectedFileName) elSelectedFileName.textContent = file.name;
+    if (elSelectedFileSize) elSelectedFileSize.textContent = `${mbSize} MB`;
+
+    if (elDropzonePrompt) elDropzonePrompt.classList.add('hidden');
+    if (elDropzoneSelectedFile) elDropzoneSelectedFile.classList.remove('hidden');
+
+    // Preenche títulos sugeridos a partir do nome do arquivo
+    const cleanName = file.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ');
+    if (elInputManualTitle && !elInputManualTitle.value.trim()) {
+      elInputManualTitle.value = cleanName;
+    }
+    if (elInputManualLiveTitle && !elInputManualLiveTitle.value.trim()) {
+      elInputManualLiveTitle.value = `TV BRAZA AO VIVO: ${cleanName}`;
+    }
+  }
+
+  if (elBtnClearVideoFile) {
+    elBtnClearVideoFile.addEventListener('click', (e) => {
+      e.stopPropagation();
+      selectedVideoFile = null;
+      if (elInputVideoFile) elInputVideoFile.value = '';
+      if (elDropzonePrompt) elDropzonePrompt.classList.remove('hidden');
+      if (elDropzoneSelectedFile) elDropzoneSelectedFile.classList.add('hidden');
+    });
+  }
+
+  if (elBtnTriggerManualThumb && elInputManualThumbFile) {
+    elBtnTriggerManualThumb.addEventListener('click', () => {
+      elInputManualThumbFile.click();
+    });
+
+    elInputManualThumbFile.addEventListener('change', (e) => {
+      const file = e.target.files?.[0];
+      if (file) {
+        selectedThumbFile = file;
+        if (elManualThumbName) elManualThumbName.textContent = file.name;
+      }
+    });
+  }
+
+  // Envio do formulário de upload manual com barra de progresso em tempo real
+  if (elFormUploadVideo) {
+    elFormUploadVideo.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      if (!selectedVideoFile) {
+        showToast('Selecione ou arraste um arquivo de vídeo primeiro!', 'warning');
+        return;
+      }
+
+      const title = elInputManualTitle ? elInputManualTitle.value.trim() : '';
+      const liveTitle = elInputManualLiveTitle ? elInputManualLiveTitle.value.trim() : '';
+
+      if (elBtnSubmitUploadVideo) elBtnSubmitUploadVideo.disabled = true;
+      if (elSpinnerUploadVideo) elSpinnerUploadVideo.classList.remove('hidden');
+      if (elUploadProgressBox) elUploadProgressBox.classList.remove('hidden');
+      if (elUploadProgressBar) elUploadProgressBar.style.width = '0%';
+      if (elUploadProgressPercent) elUploadProgressPercent.textContent = '0%';
+
+      let customThumbPath = null;
+      let customThumbUrl = null;
+
+      // 1. Se o usuário escolheu uma capa personalizada, envia ela primeiro
+      if (selectedThumbFile) {
+        try {
+          const thumbRes = await uploadThumbFile(selectedThumbFile);
+          if (thumbRes.success) {
+            customThumbPath = thumbRes.thumbPath;
+            customThumbUrl = thumbRes.thumbUrl;
+          }
+        } catch (_) {}
+      }
+
+      // 2. Upload do arquivo de vídeo com acompanhamento de progresso real via XHR
+      const formData = new FormData();
+      formData.append('video', selectedVideoFile);
+      formData.append('title', title);
+      formData.append('liveTitle', liveTitle);
+      if (customThumbPath) formData.append('customThumbPath', customThumbPath);
+      if (customThumbUrl) formData.append('customThumbUrl', customThumbUrl);
+
+      const xhr = new XMLHttpRequest();
+      let startTime = Date.now();
+      let lastLoaded = 0;
+      let lastTime = startTime;
+
+      xhr.upload.addEventListener('progress', (ev) => {
+        if (ev.lengthComputable) {
+          const percent = ((ev.loaded / ev.total) * 100).toFixed(1);
+          if (elUploadProgressBar) elUploadProgressBar.style.width = `${percent}%`;
+          if (elUploadProgressPercent) elUploadProgressPercent.textContent = `${percent}%`;
+
+          const now = Date.now();
+          if (now - lastTime >= 500) {
+            const timeDiff = (now - lastTime) / 1000;
+            const bytesDiff = ev.loaded - lastLoaded;
+            const speedMb = (bytesDiff / timeDiff / 1024 / 1024).toFixed(1);
+            const loadedMb = (ev.loaded / 1024 / 1024).toFixed(1);
+            const totalMb = (ev.total / 1024 / 1024).toFixed(1);
+
+            if (elUploadProgressSpeed) {
+              elUploadProgressSpeed.textContent = `Enviando a ${speedMb} MB/s (${loadedMb} / ${totalMb} MB)`;
+            }
+            lastTime = now;
+            lastLoaded = ev.loaded;
+          }
+        }
+      });
+
+      xhr.addEventListener('load', () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const data = JSON.parse(xhr.responseText);
+            if (data.success) {
+              showToast(data.message || 'Vídeo enviado e adicionado à grade com sucesso!', 'success');
+              // Limpa formulário
+              selectedVideoFile = null;
+              selectedThumbFile = null;
+              if (elInputVideoFile) elInputVideoFile.value = '';
+              if (elInputManualThumbFile) elInputManualThumbFile.value = '';
+              if (elInputManualTitle) elInputManualTitle.value = '';
+              if (elInputManualLiveTitle) elInputManualLiveTitle.value = '';
+              if (elManualThumbName) elManualThumbName.textContent = 'Nenhuma capa selecionada';
+              if (elDropzonePrompt) elDropzonePrompt.classList.remove('hidden');
+              if (elDropzoneSelectedFile) elDropzoneSelectedFile.classList.add('hidden');
+
+              fetchQueue();
+              fetchStatus();
+            } else {
+              showToast(data.error || 'Falha no upload do vídeo', 'error');
+            }
+          } catch (err) {
+            showToast('Erro ao processar resposta do servidor', 'error');
+          }
+        } else {
+          showToast(`Erro no envio do vídeo (status ${xhr.status})`, 'error');
+        }
+
+        resetUploadUi();
+      });
+
+      xhr.addEventListener('error', () => {
+        showToast('Falha na conexão durante o upload do vídeo', 'error');
+        resetUploadUi();
+      });
+
+      xhr.addEventListener('abort', () => {
+        showToast('Upload de vídeo cancelado', 'warning');
+        resetUploadUi();
+      });
+
+      xhr.open('POST', '/api/queue/upload');
+      xhr.send(formData);
+
+      function resetUploadUi() {
+        if (elBtnSubmitUploadVideo) elBtnSubmitUploadVideo.disabled = false;
+        if (elSpinnerUploadVideo) elSpinnerUploadVideo.classList.add('hidden');
+        setTimeout(() => {
+          if (elUploadProgressBox) elUploadProgressBox.classList.add('hidden');
+        }, 3000);
+      }
+    });
+  }
 }
 
 async function uploadThumbFile(file) {

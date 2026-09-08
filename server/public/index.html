@@ -225,97 +225,185 @@
       </div>
     </section>
 
-    <!-- SECTION: Adicionar Programação via Link do YouTube -->
+    <!-- SECTION: Adicionar Programação (YouTube ou Upload Manual) -->
     <section class="card add-program-card">
-      <div class="card-header">
+      <div class="card-header" style="flex-wrap: wrap; gap: 10px;">
         <div class="card-title-group">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="#ef4444">
-            <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="#f59e0b">
+            <polygon points="5 3 19 12 5 21 5 3"></polygon>
           </svg>
-          <h2>ADICIONAR VÍDEO DO YOUTUBE À PROGRAMAÇÃO</h2>
+          <h2>ADICIONAR ATRAÇÃO À PROGRAMAÇÃO</h2>
+        </div>
+
+        <!-- Abas de Alternância -->
+        <div class="tab-buttons">
+          <button type="button" class="tab-btn active" id="tab-btn-youtube">🔗 Link do YouTube</button>
+          <button type="button" class="tab-btn" id="tab-btn-upload">📁 Upload Manual de Vídeo</button>
         </div>
       </div>
 
-      <div class="add-input-wrapper">
-        <div class="url-input-box">
-          <input 
-            type="url" 
-            id="input-yt-url" 
-            placeholder="Cole o link do YouTube aqui (ex: https://www.youtube.com/watch?v=... ou https://youtu.be/...)"
-            autocomplete="off"
-          />
-          <button class="btn-primary-braza" id="btn-quick-add" style="padding: 10px 18px; white-space: nowrap;">
-            <span class="btn-text">⚡ Adicionar à Grade</span>
-            <span class="spinner hidden" id="spinner-quick-add"></span>
-          </button>
-          <button class="btn-inspect" id="btn-inspect-url" style="white-space: nowrap;" title="Personalizar título ou enviar thumbnail">
-            <span class="btn-text">Personalizar</span>
-            <span class="spinner hidden" id="spinner-inspect"></span>
-          </button>
-        </div>
-      </div>
-
-      <!-- Preview do Vídeo Consultado antes de Confirmar -->
-      <div class="url-preview-card hidden" id="url-preview-card">
-        <div class="url-preview-top">
-          <div class="url-preview-thumb-wrapper">
-            <img src="" alt="Thumbnail" class="url-preview-thumb" id="preview-card-thumb">
-            <span class="custom-thumb-indicator hidden" id="preview-custom-thumb-badge">THUMB PERSONALIZADA</span>
-          </div>
-          <div class="url-preview-details">
-            <h4 id="preview-card-title">Título do vídeo</h4>
-            <p id="preview-card-channel">Canal: --</p>
-            <div class="preview-meta-row">
-              <span class="preview-chip" id="preview-card-duration">Duração: 00:00</span>
-              <span class="preview-chip status-ready">Pronto para Enfileirar</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Campos de Título da Live e Upload de Thumbnail -->
-        <div class="url-preview-custom-section">
-          <div class="form-group">
-            <label for="input-live-title">
-              <strong>Título da Live no YouTube</strong> (atualizado quando este vídeo começar):
-            </label>
+      <!-- ABA 1: Link do YouTube -->
+      <div class="tab-content" id="tab-content-youtube">
+        <div class="add-input-wrapper">
+          <div class="url-input-box">
             <input 
-              type="text" 
-              id="input-live-title" 
-              maxlength="100" 
-              placeholder="Ex: TV BRAZA AO VIVO: Super Entrevista Exclusiva"
+              type="url" 
+              id="input-yt-url" 
+              placeholder="Cole o link do YouTube aqui (ex: https://www.youtube.com/watch?v=... ou https://youtu.be/...)"
+              autocomplete="off"
             />
-            <small>O sistema enviará esse título automaticamente para a Live do YouTube assim que o programa for ao ar.</small>
+            <button class="btn-primary-braza" id="btn-quick-add" style="padding: 10px 18px; white-space: nowrap;">
+              <span class="btn-text">⚡ Adicionar à Grade</span>
+              <span class="spinner hidden" id="spinner-quick-add"></span>
+            </button>
+            <button class="btn-inspect" id="btn-inspect-url" style="white-space: nowrap;" title="Personalizar título ou enviar thumbnail">
+              <span class="btn-text">Personalizar</span>
+              <span class="spinner hidden" id="spinner-inspect"></span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Preview do Vídeo Consultado antes de Confirmar -->
+        <div class="url-preview-card hidden" id="url-preview-card">
+          <div class="url-preview-top">
+            <div class="url-preview-thumb-wrapper">
+              <img src="" alt="Thumbnail" class="url-preview-thumb" id="preview-card-thumb">
+              <span class="custom-thumb-indicator hidden" id="preview-custom-thumb-badge">THUMB PERSONALIZADA</span>
+            </div>
+            <div class="url-preview-details">
+              <h4 id="preview-card-title">Título do vídeo</h4>
+              <p id="preview-card-channel">Canal: --</p>
+              <div class="preview-meta-row">
+                <span class="preview-chip" id="preview-card-duration">Duração: 00:00</span>
+                <span class="preview-chip status-ready">Pronto para Enfileirar</span>
+              </div>
+            </div>
           </div>
 
-          <div class="thumb-upload-box">
-            <div class="thumb-upload-actions">
-              <label class="btn-upload-file">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-                  <circle cx="8.5" cy="8.5" r="1.5"></circle>
-                  <polyline points="21 15 16 10 5 21"></polyline>
-                </svg>
-                <span>Upar Thumbnail Personalizada (.jpg, .png)</span>
-                <input type="file" id="input-custom-thumb" accept="image/jpeg,image/png,image/webp" style="display:none">
+          <!-- Campos de Título da Live e Upload de Thumbnail -->
+          <div class="url-preview-custom-section">
+            <div class="form-group">
+              <label for="input-live-title">
+                <strong>Título da Live no YouTube</strong> (atualizado quando este vídeo começar):
               </label>
-              <button type="button" class="btn-small-subtle hidden" id="btn-remove-custom-thumb">Restaurar Capa Padrão</button>
+              <input 
+                type="text" 
+                id="input-live-title" 
+                maxlength="100" 
+                placeholder="Ex: TV BRAZA AO VIVO: Super Entrevista Exclusiva"
+              />
+              <small>O sistema enviará esse título automaticamente para a Live do YouTube assim que o programa for ao ar.</small>
             </div>
-            <div class="thumb-upload-tip">
-              💡 Você pode enviar sua própria arte de thumbnail ou manter a capa original do YouTube.
+
+            <div class="thumb-upload-box">
+              <div class="thumb-upload-actions">
+                <label class="btn-upload-file">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                    <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                    <polyline points="21 15 16 10 5 21"></polyline>
+                  </svg>
+                  <span>Upar Thumbnail Personalizada (.jpg, .png)</span>
+                  <input type="file" id="input-custom-thumb" accept="image/jpeg,image/png,image/webp" style="display:none">
+                </label>
+                <button type="button" class="btn-small-subtle hidden" id="btn-remove-custom-thumb">Restaurar Capa Padrão</button>
+              </div>
+              <div class="thumb-upload-tip">
+                💡 Você pode enviar sua própria arte de thumbnail ou manter a capa original do YouTube.
+              </div>
             </div>
           </div>
-        </div>
 
-        <div class="url-preview-actions">
-          <button class="btn-primary-braza" id="btn-confirm-add">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="12" y1="5" x2="12" y2="19"></line>
-              <line x1="5" y1="12" x2="19" y2="12"></line>
-            </svg>
-            <span>Confirmar e Adicionar à Grade</span>
-          </button>
-          <button class="btn-cancel" id="btn-cancel-preview">Cancelar</button>
+          <div class="url-preview-actions">
+            <button class="btn-primary-braza" id="btn-confirm-add">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+              <span>Confirmar e Adicionar à Grade</span>
+            </button>
+            <button class="btn-cancel" id="btn-cancel-preview">Cancelar</button>
+          </div>
         </div>
+      </div>
+
+      <!-- ABA 2: Upload Manual de Vídeo -->
+      <div class="tab-content hidden" id="tab-content-upload">
+        <form id="form-upload-video" class="upload-video-form" style="margin-top: 10px;">
+          <!-- Dropzone para arrastar ou clicar -->
+          <div class="dropzone" id="video-dropzone">
+            <input type="file" id="input-video-file" accept="video/mp4,video/x-matroska,video/quicktime,video/avi,video/webm,.ts,.flv" class="file-input-hidden" />
+            <div class="dropzone-content" id="dropzone-prompt">
+              <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="1.8">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="17 8 12 3 7 8"></polyline>
+                <line x1="12" y1="3" x2="12" y2="15"></line>
+              </svg>
+              <div class="dropzone-text">
+                <strong>Clique ou arraste um arquivo de vídeo aqui</strong>
+                <span>Formatos aceitos: MP4, MKV, MOV, TS, WebM (Até 10 GB)</span>
+              </div>
+            </div>
+
+            <div class="dropzone-file-selected hidden" id="dropzone-selected-file">
+              <div class="file-info-col">
+                <span class="file-name" id="selected-file-name">video.mp4</span>
+                <span class="file-size" id="selected-file-size">0 MB</span>
+              </div>
+              <button type="button" class="btn-small-danger" id="btn-clear-video-file">Trocar Arquivo</button>
+            </div>
+          </div>
+
+          <!-- Campos de Configuração do Vídeo Manual -->
+          <div class="manual-upload-fields">
+            <div class="form-row-2col">
+              <div class="form-group">
+                <label for="input-manual-title">Título na Grade TV Braza:</label>
+                <input type="text" id="input-manual-title" placeholder="Ex: Entrevista Especial - Episódio 01" required />
+              </div>
+              <div class="form-group">
+                <label for="input-manual-live-title">Título da Live no YouTube Studio:</label>
+                <input type="text" id="input-manual-live-title" placeholder="Ex: TV BRAZA AO VIVO: Entrevista Especial" maxlength="100" />
+              </div>
+            </div>
+
+            <!-- Upload opcional de Thumbnail para o vídeo manual -->
+            <div class="form-group">
+              <label>Thumbnail Personalizada da Live (Opcional):</label>
+              <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                <input type="file" id="input-manual-thumb-file" accept="image/jpeg,image/png,image/webp" class="file-input-hidden" />
+                <button type="button" class="btn-upload-file" id="btn-trigger-manual-thumb">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                    <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                    <polyline points="21 15 16 10 5 21"></polyline>
+                  </svg>
+                  <span>Escolher Imagem (Capa da Live)</span>
+                </button>
+                <span id="manual-thumb-name" style="font-size: 13px; color: var(--text-dim);">Nenhuma capa selecionada</span>
+              </div>
+            </div>
+
+            <!-- Barra de Progresso em Tempo Real do Upload Manual -->
+            <div class="upload-progress-box hidden" id="upload-video-progress-box">
+              <div class="download-monitor-header">
+                <span class="label" id="upload-progress-label">ENVIANDO VÍDEO PARA A VPS:</span>
+                <span class="percent" id="upload-progress-percent">0%</span>
+              </div>
+              <div class="progress-bar-bg">
+                <div class="progress-bar-fill" id="upload-progress-bar" style="width: 0%; background: linear-gradient(90deg, #10b981, #059669);"></div>
+              </div>
+              <div class="dl-speed" id="upload-progress-speed">Enviando...</div>
+            </div>
+
+            <div style="margin-top: 6px; display: flex; gap: 10px;">
+              <button type="submit" class="btn-primary-braza" id="btn-submit-upload-video" style="padding: 12px 24px;">
+                <span class="btn-text">🚀 Fazer Upload e Adicionar à Grade</span>
+                <span class="spinner hidden" id="spinner-upload-video"></span>
+              </button>
+            </div>
+          </div>
+        </form>
       </div>
     </section>
 

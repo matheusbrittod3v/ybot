@@ -3,19 +3,37 @@ import crypto from 'crypto';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import multer from 'multer';
-import { db, DATA_DIR, THUMBS_DIR } from '../db.js';
+import { db, DATA_DIR, THUMBS_DIR, MEDIA_DIR } from '../db.js';
 import { streamer } from '../engine/streamer.js';
 import { downloader } from '../engine/downloader.js';
-import { fetchVideoInfo } from '../utils/youtube.js';
+import { fetchVideoInfo, formatDuration } from '../utils/youtube.js';
 import { getSystemStats } from '../utils/system.js';
 import { youtubeUpdater } from '../utils/youtube-updater.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const COOKIE_GENERATOR_SCRIPT = path.join(__dirname, '../utils/cookie_generator.py');
+const execFileAsync = promisify(execFile);
 
 const router = express.Router();
+
+// Helper para obter duração de arquivo de vídeo via FFmpeg
+async function getVideoDuration(filePath) {
+  try {
+    const { stderr } = await execFileAsync('ffmpeg', ['-i', filePath], { timeout: 10000 }).catch(e => e);
+    const match = (stderr || '').match(/Duration:\s*(\d+):(\d+):(\d+\.?\d*)/);
+    if (match) {
+      const hours = parseInt(match[1], 10);
+      const minutes = parseInt(match[2], 10);
+      const seconds = parseFloat(match[3]);
+      return Math.round(hours * 3600 + minutes * 60 + seconds);
+    }
+  } catch (_) {}
+  return 0;
+}
 
 // Multer para cookies.txt
 const uploadCookie = multer({
@@ -43,6 +61,32 @@ const upload = multer({
       cb(null, true);
     } else {
       cb(new Error('Apenas arquivos de imagem são permitidos (JPG, PNG, WebP)'));
+    }
+  }
+});
+
+// Configuração do Multer para upload manual de vídeos (MP4, MKV, MOV, TS, WebM)
+const videoStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, MEDIA_DIR);
+  },
+  filename: (req, file, cb) => {
+    const id = crypto.randomUUID();
+    req.uploadedVideoId = id;
+    cb(null, `${id}.mp4`);
+  }
+});
+
+const uploadVideo = multer({
+  storage: videoStorage,
+  limits: { fileSize: 10 * 1024 * 1024 * 1024 }, // 10GB máximo
+  fileFilter: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    const allowed = ['.mp4', '.mkv', '.mov', '.avi', '.ts', '.webm', '.m4v', '.flv'];
+    if (allowed.includes(ext) || (file.mimetype && file.mimetype.startsWith('video/'))) {
+      cb(null, true);
+    } else {
+      cb(new Error('Formato de vídeo não suportado. Envie arquivos MP4, MKV, MOV, TS ou WebM.'));
     }
   }
 });
@@ -228,6 +272,69 @@ router.post('/queue/add', async (req, res) => {
 
     res.json({ success: true, item: newItem });
   } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Upload manual de arquivo de vídeo direto para a grade de programação
+router.post('/queue/upload', uploadVideo.single('video'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: 'Nenhum arquivo de vídeo foi enviado.' });
+    }
+
+    const id = req.uploadedVideoId || crypto.randomUUID();
+    const filePath = req.file.path;
+    const stats = fs.statSync(filePath);
+
+    const originalName = req.file.originalname.replace(/\.[^/.]+$/, '');
+    const title = (req.body.title && req.body.title.trim()) || originalName || 'Vídeo Manual';
+    const settings = db.getSettings();
+    const liveTitle = (req.body.liveTitle && req.body.liveTitle.trim()) || `${settings.defaultLiveTitlePrefix || ''}${title}`.substring(0, 100);
+    const customThumbUrl = req.body.customThumbUrl || null;
+    const customThumbPath = req.body.customThumbPath || null;
+
+    const duration = await getVideoDuration(filePath);
+    const durationFormatted = formatDuration(duration);
+
+    const newItem = db.addToQueue({
+      id,
+      title,
+      liveTitle,
+      url: `local://upload/${id}`,
+      channel: 'Upload Local',
+      duration,
+      durationFormatted,
+      thumbnail: customThumbUrl || '/assets/logo.svg',
+      customThumbUrl,
+      customThumbPath,
+      status: 'ready', // Já está no disco pronto para transmissão!
+      filePath,
+      fileSize: stats.size,
+      downloadProgress: 100,
+      downloadSpeed: 'Pronto no Disco',
+      source: 'upload'
+    });
+
+    console.log(`[Queue] Vídeo manual adicionado com sucesso: "${title}" (${(stats.size / 1024 / 1024).toFixed(1)} MB)!`);
+
+    // Dispara checagem do Downloader
+    downloader.checkQueue();
+
+    // Se o streamer estiver em standby, troca imediatamente para o vídeo novo
+    if (streamer.shouldRun && streamer.currentMode === 'STANDBY') {
+      setTimeout(() => {
+        streamer.playNextInQueue();
+      }, 500);
+    }
+
+    res.json({
+      success: true,
+      item: newItem,
+      message: `Vídeo "${title}" enviado e adicionado à grade com sucesso!`
+    });
+  } catch (err) {
+    console.error('[Upload Video Erro]', err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });
