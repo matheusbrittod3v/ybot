@@ -449,6 +449,9 @@ function renderQueue(queue) {
     } else if (item.status === 'downloading') {
       statusClass = 'downloading';
       statusText = `Baixando ${item.downloadProgress || 0}%`;
+    } else if (item.status === 'error') {
+      statusClass = 'error';
+      statusText = 'Erro no Download';
     }
 
     const thumbSrc = item.customThumbUrl || item.thumbnail || 'assets/logo.svg';
@@ -472,6 +475,9 @@ function renderQueue(queue) {
         </div>
       </div>
       <div class="queue-actions">
+        ${!isPlaying && item.status !== 'ready' ? `
+          <button class="btn-queue-retry" onclick="retryQueueItem('${item.id}')" title="Baixar agora / Tentar novamente">🔄</button>
+        ` : ''}
         <button class="btn-queue-edit" onclick="openEditItemModal('${item.id}')" title="Editar Título e Capa da Live">✏️</button>
         ${!isPlaying && index > 0 ? `
           <button class="btn-queue-move" onclick="moveQueueItem('${item.id}', -1)" title="Subir na fila">▲</button>
@@ -537,13 +543,24 @@ function renderHistory(history) {
 // AÇÕES DO USUÁRIO
 // ============================================================
 function setupEventListeners() {
-  // Consultar link do YouTube
-  elBtnInspectUrl.addEventListener('click', handleInspectUrl);
+  // Adicionar rápido direto à grade (1 clique)
+  const elBtnQuickAdd = document.getElementById('btn-quick-add');
+  if (elBtnQuickAdd) {
+    elBtnQuickAdd.addEventListener('click', handleQuickAdd);
+  }
+
+  // Tecla Enter no input aciona o Quick-Add direto
   elInputYtUrl.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') handleInspectUrl();
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleQuickAdd();
+    }
   });
 
-  // Confirmar adição
+  // Consultar link para personalização (título/capa)
+  elBtnInspectUrl.addEventListener('click', handleInspectUrl);
+
+  // Confirmar adição personalizada
   elBtnConfirmAdd.addEventListener('click', handleConfirmAdd);
   elBtnCancelPreview.addEventListener('click', () => {
     elUrlPreviewCard.classList.add('hidden');
@@ -868,6 +885,62 @@ async function handleConfirmAdd() {
     showToast('Erro ao salvar vídeo na grade', 'error');
   }
 }
+
+async function handleQuickAdd() {
+  const url = elInputYtUrl.value.trim();
+  if (!url) {
+    showToast('Cole o link do YouTube primeiro!', 'warning');
+    return;
+  }
+
+  const elBtnQuickAdd = document.getElementById('btn-quick-add');
+  const elSpinnerQuickAdd = document.getElementById('spinner-quick-add');
+  if (elBtnQuickAdd) elBtnQuickAdd.disabled = true;
+  if (elSpinnerQuickAdd) elSpinnerQuickAdd.classList.remove('hidden');
+
+  try {
+    showToast('Consultando vídeo e iniciando download...', 'info');
+    const res = await fetch('/api/queue/quick-add', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url })
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      showToast(`"${data.item.title}" adicionado! Download em andamento...`, 'success');
+      elInputYtUrl.value = '';
+      elUrlPreviewCard.classList.add('hidden');
+      pendingVideoPreview = null;
+      fetchQueue();
+      fetchStatus();
+    } else {
+      showToast(data.error || 'Erro ao adicionar vídeo', 'error');
+    }
+  } catch (err) {
+    showToast('Erro de comunicação ao adicionar vídeo', 'error');
+  } finally {
+    if (elBtnQuickAdd) elBtnQuickAdd.disabled = false;
+    if (elSpinnerQuickAdd) elSpinnerQuickAdd.classList.add('hidden');
+  }
+}
+
+window.retryQueueItem = async function(id) {
+  try {
+    showToast('Disparando download do vídeo na VPS...', 'info');
+    const res = await fetch(`/api/queue/${id}/retry`, { method: 'POST' });
+    const data = await res.json();
+    if (data.success) {
+      showToast('Download iniciado com sucesso!', 'success');
+      fetchQueue();
+      fetchStatus();
+    } else {
+      showToast(data.error || 'Erro ao reiniciar download', 'error');
+    }
+  } catch (err) {
+    showToast('Erro ao reiniciar download', 'error');
+  }
+};
 
 window.openEditItemModal = function(id) {
   const item = currentQueue.find(i => i.id === id);

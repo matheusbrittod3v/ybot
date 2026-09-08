@@ -945,10 +945,35 @@ body {
   color: #94a3b8;
 }
 
+.queue-status-chip.error {
+  background: rgba(239, 68, 68, 0.25);
+  color: #fca5a5;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
 .queue-actions {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+.btn-queue-retry {
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  color: #fbbf24;
+  border-radius: 6px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.2s;
+}
+.btn-queue-retry:hover {
+  background: rgba(245, 158, 11, 0.3);
+  transform: scale(1.08);
 }
 
 .btn-queue-move, .btn-queue-delete {

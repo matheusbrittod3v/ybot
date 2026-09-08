@@ -14,6 +14,11 @@ class DownloaderEngine {
     this.activeDownload = null; // { itemId, proc, promiseResolve }
     this.isChecking = false;
     this.listeners = new Set();
+
+    // Watchdog automático a cada 10 segundos para garantir que a fila nunca trave
+    this.watchdogTimer = setInterval(() => {
+      this.checkQueue();
+    }, 10000);
   }
 
   onEvent(callback) {
@@ -162,23 +167,30 @@ class DownloaderEngine {
 
       proc.stdout.on('data', (chunk) => {
         const text = chunk.toString();
-        const match = text.match(/\[PROGRESS\]\s+([\d.]+)%/);
-        if (match) {
-          const percent = Math.min(99.9, parseFloat(match[1]));
-          const now = Date.now();
-          if (now - lastProgressUpdate > 500) {
-            lastProgressUpdate = now;
-            db.updateQueueItem(item.id, {
-              downloadProgress: percent,
-              downloadSpeed: 'Baixando via lib...'
-            });
-            this.broadcast('download_progress', {
-              id: item.id,
-              progress: percent,
-              speed: 'pytubefix (sem cookies)',
-              eta: '',
-              totalSize: ''
-            });
+        const lines = text.split('\n');
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          const match = trimmed.match(/\[PROGRESS\]\s+([\d.]+)%/);
+          if (match) {
+            const percent = Math.min(99.9, parseFloat(match[1]));
+            const now = Date.now();
+            if (now - lastProgressUpdate > 500) {
+              lastProgressUpdate = now;
+              db.updateQueueItem(item.id, {
+                downloadProgress: percent,
+                downloadSpeed: 'Baixando via lib...'
+              });
+              this.broadcast('download_progress', {
+                id: item.id,
+                progress: percent,
+                speed: 'pytubefix (sem cookies)',
+                eta: '',
+                totalSize: ''
+              });
+            }
+          } else {
+            console.log(trimmed);
           }
         }
       });

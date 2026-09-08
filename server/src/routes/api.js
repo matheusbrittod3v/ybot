@@ -123,6 +123,42 @@ router.post('/queue/preview', async (req, res) => {
   }
 });
 
+// Adicionar vídeo rápido diretamente (1 clique, sem preview)
+router.post('/queue/quick-add', async (req, res) => {
+  const { url } = req.body;
+  if (!url) {
+    return res.status(400).json({ success: false, error: 'URL do vídeo é obrigatória' });
+  }
+
+  try {
+    const videoData = await fetchVideoInfo(url);
+    const settings = db.getSettings();
+    const finalLiveTitle = `${settings.defaultLiveTitlePrefix || ''}${videoData.title}`.substring(0, 100);
+
+    const newItem = db.addToQueue({
+      id: crypto.randomUUID(),
+      url: videoData.url || url,
+      ...videoData,
+      liveTitle: finalLiveTitle,
+      customThumbPath: null,
+      customThumbUrl: null,
+      status: 'queued'
+    });
+
+    console.log(`[Queue] Vídeo "${newItem.title}" adicionado via Quick-Add. Acionando downloader...`);
+    downloader.checkQueue();
+
+    if (streamer.shouldRun && streamer.currentMode === 'STANDBY') {
+      setTimeout(() => streamer.playNextInQueue(), 500);
+    }
+
+    res.json({ success: true, item: newItem });
+  } catch (err) {
+    console.error('[Queue Quick-Add Erro]', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Adicionar vídeo à fila com Título e Thumbnail Personalizada
 router.post('/queue/add', async (req, res) => {
   const {
@@ -248,6 +284,33 @@ router.post('/queue/clear', (req, res) => {
       db.removeFromQueue(item.id);
     }
   }
+  res.json({ success: true });
+});
+
+// Forçar nova tentativa de download de um item da fila
+router.post('/queue/:id/retry', (req, res) => {
+  const { id } = req.params;
+  const item = db.getQueueItem(id);
+  if (!item) {
+    return res.status(404).json({ success: false, error: 'Item não encontrado na fila' });
+  }
+
+  downloader.cancelActiveDownload(id);
+  db.updateQueueItem(id, {
+    status: 'queued',
+    downloadProgress: 0,
+    downloadSpeed: 'Reiniciando...',
+    error: null
+  });
+
+  console.log(`[Queue] Download reiniciado manualmente para o item ${id} (${item.title})`);
+  downloader.checkQueue();
+  res.json({ success: true, message: 'Download reiniciado com sucesso' });
+});
+
+// Forçar verificação imediata do Downloader
+router.post('/downloader/check', (req, res) => {
+  downloader.checkQueue();
   res.json({ success: true });
 });
 

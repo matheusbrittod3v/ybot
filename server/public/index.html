@@ -244,8 +244,12 @@
             placeholder="Cole o link do YouTube aqui (ex: https://www.youtube.com/watch?v=... ou https://youtu.be/...)"
             autocomplete="off"
           />
-          <button class="btn-inspect" id="btn-inspect-url">
-            <span class="btn-text">Consultar Link</span>
+          <button class="btn-primary-braza" id="btn-quick-add" style="padding: 10px 18px; white-space: nowrap;">
+            <span class="btn-text">⚡ Adicionar à Grade</span>
+            <span class="spinner hidden" id="spinner-quick-add"></span>
+          </button>
+          <button class="btn-inspect" id="btn-inspect-url" style="white-space: nowrap;" title="Personalizar título ou enviar thumbnail">
+            <span class="btn-text">Personalizar</span>
             <span class="spinner hidden" id="spinner-inspect"></span>
           </button>
         </div>
