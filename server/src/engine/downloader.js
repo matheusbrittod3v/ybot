@@ -3,6 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
 import { db, DATA_DIR, MEDIA_DIR } from '../db.js';
+import { extractYouTubeId } from '../utils/youtube.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -117,6 +118,8 @@ class DownloaderEngine {
     }
 
     const targetFile = this.getFilePath(item.id);
+    const videoId = extractYouTubeId(item.url);
+    const cleanUrl = videoId ? `https://www.youtube.com/watch?v=${videoId}` : item.url;
 
     db.updateQueueItem(item.id, {
       status: 'downloading',
@@ -126,7 +129,7 @@ class DownloaderEngine {
     this.broadcast('download_start', { item: db.getQueueItem(item.id) });
 
     // 1. Tenta baixar via biblioteca pytubefix (Bypass anti-bot sem precisar de cookies)
-    const pytubeResult = await this.downloadWithPytube(item, targetFile);
+    const pytubeResult = await this.downloadWithPytube(item, cleanUrl, targetFile);
     if (pytubeResult.success) {
       return pytubeResult;
     }
@@ -134,20 +137,20 @@ class DownloaderEngine {
     console.warn(`[Downloader] pytubefix não completou. Acionando motor de fallback (yt-dlp)...`);
 
     // 2. Fallback via yt-dlp
-    return await this.downloadWithYtDlp(item, targetFile);
+    return await this.downloadWithYtDlp(item, cleanUrl, targetFile);
   }
 
   /**
-   * Download via biblioteca pytubefix com geração nativa de PO Token
+   * Download via biblioteca pytubefix com clientes sem bot-challenge (VISION_OS, IOS, MWEB, etc.)
    */
-  downloadWithPytube(item, targetFile) {
+  downloadWithPytube(item, downloadUrl, targetFile) {
     return new Promise((resolve) => {
       if (!fs.existsSync(PYTUBE_DOWNLOADER_SCRIPT)) {
         return resolve({ success: false, error: 'pytube_downloader.py não encontrado' });
       }
 
-      console.log(`[Downloader] Executando biblioteca pytubefix para ${item.id} (${item.url})...`);
-      const proc = spawn('python3', [PYTUBE_DOWNLOADER_SCRIPT, item.url, targetFile]);
+      console.log(`[Downloader] Executando biblioteca pytubefix para ${item.id} (${downloadUrl})...`);
+      const proc = spawn('python3', [PYTUBE_DOWNLOADER_SCRIPT, downloadUrl, targetFile]);
 
       this.activeDownload = {
         itemId: item.id,

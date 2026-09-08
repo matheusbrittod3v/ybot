@@ -14,7 +14,8 @@ if len(sys.argv) < 2:
 
 url = sys.argv[1]
 
-for client in ['WEB', 'ANDROID_VR', 'ANDROID']:
+# Prioriza clientes que não sofrem bot-challenge do Google (Apple clients e Mobile Web)
+for client in ['VISION_OS', 'IOS', 'MWEB', 'WEB_SAFARI', 'ANDROID_VR', 'WEB']:
     try:
         yt = YouTube(url, client=client)
         data = {

@@ -41,15 +41,18 @@ export async function fetchVideoInfo(url) {
     throw new Error('URL inválida do YouTube. Insira um link válido do YouTube.');
   }
 
+  // Normaliza a URL para evitar parâmetros de rastreamento (?is=..., ?si=...) que ativam proteções do YouTube
+  const cleanUrl = `https://www.youtube.com/watch?v=${videoId}`;
+
   // 1. Tenta extrair com pytubefix (Bypass anti-bot nativo sem precisar de cookies)
   try {
     if (fs.existsSync(PYTUBE_INFO_SCRIPT)) {
-      const { stdout } = await execFileAsync('python3', [PYTUBE_INFO_SCRIPT, url], { timeout: 15000 });
+      const { stdout } = await execFileAsync('python3', [PYTUBE_INFO_SCRIPT, cleanUrl], { timeout: 15000 });
       const data = JSON.parse(stdout.trim());
       if (data && data.title && !data.error) {
         return {
           videoId,
-          url,
+          url: cleanUrl,
           title: data.title,
           channel: data.channel || 'YouTube',
           duration: data.duration || 0,
