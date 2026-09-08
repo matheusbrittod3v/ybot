@@ -5,17 +5,19 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: tvbraza-studio-24h
+    container_name: ${CONTAINER_NAME:-tvbraza-studio-24h}
     restart: always
+    expose:
+      - "${PORT:-3000}"
     ports:
-      - "${PORT:-3000}:3000"
+      - "${PORT:-3000}:${PORT:-3000}"
     volumes:
       # Persistência de dados: banco de dados SQLite/JSON, configurações e vídeos baixados
       - ./data:/app/data
     env_file:
       - .env
     environment:
-      - NODE_ENV=production
+      - NODE_ENV=${NODE_ENV:-production}
       - PORT=${PORT:-3000}
       - DATA_DIR=/app/data
       - YOUTUBE_STREAM_KEY=${YOUTUBE_STREAM_KEY:-}
@@ -28,9 +30,30 @@ services:
       - RESOLUTION=${RESOLUTION:-1080p}
       - VIDEO_BITRATE=${VIDEO_BITRATE:-4500k}
       - AUDIO_BITRATE=${AUDIO_BITRATE:-160k}
+    networks:
+      - default
+      - dokploy-network
+    labels:
+      - "traefik.enable=true"
+      # Roteamento HTTPS Seguro com Let's Encrypt
+      - "traefik.http.routers.${TRAEFIK_SERVICE_NAME:-tvbraza}.rule=Host(`${DOMAIN:-localhost}`)"
+      - "traefik.http.routers.${TRAEFIK_SERVICE_NAME:-tvbraza}.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}"
+      - "traefik.http.routers.${TRAEFIK_SERVICE_NAME:-tvbraza}.tls=${TRAEFIK_TLS:-true}"
+      - "traefik.http.routers.${TRAEFIK_SERVICE_NAME:-tvbraza}.tls.certresolver=${TRAEFIK_CERT_RESOLVER:-letsencrypt}"
+      # Roteamento HTTP padrão (porta 80)
+      - "traefik.http.routers.${TRAEFIK_SERVICE_NAME:-tvbraza}-http.rule=Host(`${DOMAIN:-localhost}`)"
+      - "traefik.http.routers.${TRAEFIK_SERVICE_NAME:-tvbraza}-http.entrypoints=web"
+      # Porta interna do container (lida diretamente do .env)
+      - "traefik.http.services.${TRAEFIK_SERVICE_NAME:-tvbraza}.loadbalancer.server.port=${PORT:-3000}"
     # Limitação de logs para não estourar o disco da VPS
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
+
+networks:
+  default:
+  dokploy-network:
+    name: ${DOKPLOY_NETWORK:-dokploy-network}
+    external: true
