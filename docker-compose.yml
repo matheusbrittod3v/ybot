@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  tvbraza-live:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tvbraza-studio-24h
+    restart: always
+    ports:
+      - "${PORT:-3000}:3000"
+    volumes:
+      # Persistência de dados: banco de dados SQLite/JSON, configurações e vídeos baixados
+      - ./data:/app/data
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - PORT=${PORT:-3000}
+      - DATA_DIR=/app/data
+      - YOUTUBE_STREAM_KEY=${YOUTUBE_STREAM_KEY:-}
+      - YOUTUBE_RTMP_URL=${YOUTUBE_RTMP_URL:-rtmp://a.rtmp.youtube.com/live2}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
+      - RESOLUTION=${RESOLUTION:-1080p}
+      - VIDEO_BITRATE=${VIDEO_BITRATE:-4500k}
+      - AUDIO_BITRATE=${AUDIO_BITRATE:-160k}
+    # Limitação de logs para não estourar o disco da VPS
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

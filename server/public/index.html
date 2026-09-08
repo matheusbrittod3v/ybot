@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TV Braza - Studio Playout 24/7 (YouTube)</title>
+  <meta name="description" content="Painel de Controle e Playout 24/7 da TV Braza no YouTube com economia inteligente de disco e agendamento automático.">
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <!-- Top Navigation Bar -->
+  <header class="studio-header">
+    <div class="header-left">
+      <img src="assets/logo.svg" alt="TV Braza Logo" class="brand-logo" id="brand-logo">
+      <div class="live-status-pill" id="live-status-pill">
+        <span class="pulse-dot"></span>
+        <span id="live-status-text">CARREGANDO...</span>
+      </div>
+    </div>
+
+    <!-- VPS Hardware & Storage Monitor Widget -->
+    <div class="header-center">
+      <div class="vps-widget" title="Monitor de Recursos da VPS">
+        <div class="vps-stat" id="stat-disk-wrapper">
+          <div class="vps-stat-header">
+            <span class="stat-label">DISCO VPS (ARMAZENAMENTO)</span>
+            <span class="stat-val" id="stat-disk-val">-- GB / -- GB</span>
+          </div>
+          <div class="progress-bar-bg">
+            <div class="progress-bar-fill disk-fill" id="stat-disk-bar" style="width: 0%"></div>
+          </div>
+        </div>
+
+        <div class="vps-pills">
+          <div class="vps-pill" title="Uso de Memória RAM">
+            <span class="pill-title">RAM:</span>
+            <span class="pill-val" id="stat-ram-val">--%</span>
+          </div>
+          <div class="vps-pill" title="Carga de CPU">
+            <span class="pill-title">CPU:</span>
+            <span class="pill-val" id="stat-cpu-val">-- cores</span>
+          </div>
+          <div class="vps-pill" title="Vídeos baixados em disco">
+            <span class="pill-title">NO DISCO:</span>
+            <span class="pill-val highlight" id="stat-media-val">0 vídeos</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="header-right">
+      <button class="btn-icon" id="btn-open-logs" title="Ver Logs da Transmissão">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="4 17 10 11 4 5"></polyline>
+          <line x1="12" y1="19" x2="20" y2="19"></line>
+        </svg>
+        <span>Logs</span>
+      </button>
+
+      <button class="btn-primary-outline" id="btn-open-settings" title="Configurações de Transmissão">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </svg>
+        <span>Ajustes</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Banner de aviso se a chave do YouTube não estiver configurada -->
+  <div class="alert-banner hidden" id="alert-no-key">
+    <div class="alert-content">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2">
+        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+        <line x1="12" y1="9" x2="12" y2="13"></line>
+        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+      </svg>
+      <span><strong>Atenção:</strong> A Chave de Transmissão (Stream Key) do YouTube ainda não foi configurada. O sinal está em modo de teste local.</span>
+      <button class="btn-small-amber" id="btn-config-key-now">Configurar Chave Agora</button>
+    </div>
+  </div>
+
+  <main class="studio-container">
+    <!-- HERO SECTION: Playout Cards -->
+    <section class="hero-grid">
+      <!-- NO AR AGORA (Currently On-Air) -->
+      <div class="card card-now-playing" id="card-now-playing">
+        <div class="card-header">
+          <div class="card-title-group">
+            <span class="live-dot-red"></span>
+            <h2>NO AR AGORA</h2>
+          </div>
+          <div class="stream-metrics" id="stream-metrics">
+            <span class="metric-pill" id="metric-fps">30.0 FPS</span>
+            <span class="metric-pill" id="metric-bitrate">4500 kbps</span>
+          </div>
+        </div>
+
+        <div class="now-playing-body">
+          <div class="preview-media-container" id="preview-container">
+            <img src="" alt="Thumbnail Atual" class="preview-thumb hidden" id="current-thumb">
+            
+            <!-- Standby Display when queue is empty -->
+            <div class="standby-display hidden" id="standby-display">
+              <div class="standby-pulse">
+                <div class="standby-logo">TV BRAZA</div>
+                <div class="standby-sub">STANDBY 24H • AGUARDANDO PROGRAMAÇÃO</div>
+                <div class="standby-hint">O sinal do YouTube continua 100% ativo e sem quedas. Cole um link abaixo para iniciar!</div>
+              </div>
+            </div>
+
+            <!-- Overlay Badge -->
+            <div class="media-overlay-badge" id="now-playing-badge">TRANSMITINDO</div>
+          </div>
+
+          <div class="now-playing-info">
+            <h3 class="video-title" id="current-title">Aguardando início...</h3>
+            <p class="video-channel" id="current-channel">Canal: TV Braza</p>
+
+            <!-- Progress Bar -->
+            <div class="progress-section">
+              <div class="progress-bar-bg">
+                <div class="progress-bar-fill live-fill" id="playback-progress-bar" style="width: 0%"></div>
+              </div>
+              <div class="time-display">
+                <span id="playback-elapsed">00:00:00</span>
+                <span id="playback-total">00:00:00</span>
+              </div>
+            </div>
+
+            <!-- Action Controls -->
+            <div class="now-playing-actions">
+              <button class="btn-action-danger" id="btn-skip-video" title="Pula para o próximo e apaga este do disco imediatamente">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polygon points="5 4 15 12 5 20 5 4"></polygon>
+                  <line x1="19" y1="5" x2="19" y2="19"></line>
+                </svg>
+                <span>Pular Vídeo (Liberar Espaço)</span>
+              </button>
+
+              <button class="btn-action-secondary" id="btn-toggle-stream" title="Pausar ou Reiniciar Transmissão">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" id="icon-stream-toggle">
+                  <rect x="6" y="4" width="4" height="16"></rect>
+                  <rect x="14" y="4" width="4" height="16"></rect>
+                </svg>
+                <span id="lbl-stream-toggle">Parar Playout</span>
+              </button>
+
+              <button class="btn-action-secondary" id="btn-restart-stream" title="Reiniciar processo FFmpeg">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="23 4 23 10 17 10"></polyline>
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                </svg>
+                <span>Reiniciar FFmpeg</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- A SEGUIR (Up Next Preview & Download Status) -->
+      <div class="card card-up-next" id="card-up-next">
+        <div class="card-header">
+          <div class="card-title-group">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2">
+              <polygon points="5 3 19 12 5 21 5 3"></polygon>
+            </svg>
+            <h2>A SEGUIR NA GRADE</h2>
+          </div>
+          <span class="badge-status" id="up-next-status-badge">AGUARDANDO</span>
+        </div>
+
+        <div class="up-next-body">
+          <div class="up-next-preview">
+            <img src="" alt="Thumbnail Próximo" class="up-next-thumb hidden" id="next-thumb">
+            <div class="up-next-empty" id="next-empty-state">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#475569" stroke-width="1.5">
+                <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect>
+                <line x1="7" y1="2" x2="7" y2="22"></line>
+                <line x1="17" y1="2" x2="17" y2="22"></line>
+                <line x1="2" y1="12" x2="22" y2="12"></line>
+                <line x1="2" y1="7" x2="7" y2="7"></line>
+                <line x1="2" y1="17" x2="7" y2="17"></line>
+                <line x1="17" y1="17" x2="22" y2="17"></line>
+                <line x1="17" y1="7" x2="22" y2="7"></line>
+              </svg>
+              <span>Nenhum vídeo seguinte na fila.</span>
+              <small>Adicione vídeos abaixo para garantir transmissão contínua sem parar!</small>
+            </div>
+          </div>
+
+          <div class="up-next-info hidden" id="next-info-box">
+            <h3 class="video-title" id="next-title">Título do Próximo Vídeo</h3>
+            <p class="video-channel" id="next-channel">Canal: --</p>
+            <div class="up-next-duration">Duração: <strong id="next-duration">00:00</strong></div>
+
+            <!-- Download Progress Bar -->
+            <div class="download-monitor-box" id="download-monitor-box">
+              <div class="download-monitor-header">
+                <span class="label" id="dl-status-label">PRÉ-DOWNLOAD NO DISCO DA VPS:</span>
+                <span class="percent" id="dl-percent">0%</span>
+              </div>
+              <div class="progress-bar-bg">
+                <div class="progress-bar-fill download-fill" id="dl-progress-bar" style="width: 0%"></div>
+              </div>
+              <div class="dl-speed" id="dl-speed-label">Aguardando início...</div>
+            </div>
+
+            <div class="smart-save-tag">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                <polyline points="22 4 12 14.01 9 11.01"></polyline>
+              </svg>
+              <span>Economia Ativa: Será baixado com antecedência e tocará automaticamente.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION: Adicionar Programação via Link do YouTube -->
+    <section class="card add-program-card">
+      <div class="card-header">
+        <div class="card-title-group">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="#ef4444">
+            <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
+          </svg>
+          <h2>ADICIONAR VÍDEO DO YOUTUBE À PROGRAMAÇÃO</h2>
+        </div>
+      </div>
+
+      <div class="add-input-wrapper">
+        <div class="url-input-box">
+          <input 
+            type="url" 
+            id="input-yt-url" 
+            placeholder="Cole o link do YouTube aqui (ex: https://www.youtube.com/watch?v=... ou https://youtu.be/...)"
+            autocomplete="off"
+          />
+          <button class="btn-inspect" id="btn-inspect-url">
+            <span class="btn-text">Consultar Link</span>
+            <span class="spinner hidden" id="spinner-inspect"></span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Preview do Vídeo Consultado antes de Confirmar -->
+      <div class="url-preview-card hidden" id="url-preview-card">
+        <img src="" alt="Thumbnail" class="url-preview-thumb" id="preview-card-thumb">
+        <div class="url-preview-details">
+          <h4 id="preview-card-title">Título do vídeo</h4>
+          <p id="preview-card-channel">Canal: --</p>
+          <div class="preview-meta-row">
+            <span class="preview-chip" id="preview-card-duration">Duração: 00:00</span>
+            <span class="preview-chip status-ready">Pronto para Enfileirar</span>
+          </div>
+        </div>
+        <div class="url-preview-actions">
+          <button class="btn-primary-braza" id="btn-confirm-add">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+            <span>Confirmar e Adicionar à Grade</span>
+          </button>
+          <button class="btn-cancel" id="btn-cancel-preview">Cancelar</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION: Grade / Fila de Programação -->
+    <section class="card queue-section">
+      <div class="card-header">
+        <div class="card-title-group">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="8" y1="6" x2="21" y2="6"></line>
+            <line x1="8" y1="12" x2="21" y2="12"></line>
+            <line x1="8" y1="18" x2="21" y2="18"></line>
+            <line x1="3" y1="6" x2="3.01" y2="6"></line>
+            <line x1="3" y1="12" x2="3.01" y2="12"></line>
+            <line x1="3" y1="18" x2="3.01" y2="18"></line>
+          </svg>
+          <h2>GRADE DE PROGRAMAÇÃO (<span id="queue-count">0</span> ITENS)</h2>
+        </div>
+
+        <div class="queue-header-actions">
+          <button class="btn-small-danger" id="btn-clear-queue">Limpar Fila Não Exibida</button>
+        </div>
+      </div>
+
+      <div class="queue-notice-banner">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="16" x2="12" y2="12"></line>
+          <line x1="12" y1="8" x2="12.01" y2="8"></line>
+        </svg>
+        <span>
+          <strong>Gestão Inteligente de Disco na VPS:</strong> 
+          Apenas o vídeo no ar e o próximo são mantidos baixados no SSD. Assim que um vídeo termina ou é pulado, ele é automaticamente apagado do disco, economizando 100% de espaço!
+        </span>
+      </div>
+
+      <!-- Queue Items Container -->
+      <div class="queue-list" id="queue-list">
+        <!-- Itens inseridos dinamicamente pelo JavaScript -->
+        <div class="empty-queue-msg" id="empty-queue-msg">
+          <p>Nenhum vídeo na grade de transmissão.</p>
+          <small>Cole uma URL do YouTube acima para iniciar sua programação 24/7.</small>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION: Histórico de Vídeos Exibidos (com confirmação de limpeza de disco) -->
+    <section class="card history-section">
+      <div class="card-header">
+        <div class="card-title-group">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polyline points="12 6 12 12 16 14"></polyline>
+          </svg>
+          <h2>VÍDEOS EXIBIDOS RECENTEMENTE</h2>
+        </div>
+        <button class="btn-small-subtle" id="btn-clear-history">Limpar Histórico</button>
+      </div>
+
+      <div class="history-list" id="history-list">
+        <div class="empty-history" id="empty-history-msg">Nenhum vídeo finalizado até o momento.</div>
+      </div>
+    </section>
+  </main>
+
+  <!-- MODAL: Configurações de Transmissão -->
+  <div class="modal-backdrop hidden" id="modal-settings">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="card-title-group">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+          <h3>CONFIGURAÇÕES DA TRANSMISSÃO</h3>
+        </div>
+        <button class="btn-modal-close" id="btn-close-settings">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <form id="form-settings">
+          <div class="form-group">
+            <label for="cfg-stream-key">Chave de Transmissão do YouTube (Stream Key):</label>
+            <div class="input-password-wrapper">
+              <input type="password" id="cfg-stream-key" placeholder="ex: " required />
+              <button type="button" class="btn-toggle-eye" id="btn-toggle-key-eye">👁️</button>
+            </div>
+            <small>Obtenha no YouTube Studio &gt; Fazer Transmissão ao Vivo &gt; Chave de Transmissão.</small>
+          </div>
+
+          <div class="form-group">
+            <label for="cfg-rtmp-url">URL do Servidor RTMP do YouTube:</label>
+            <input type="text" id="cfg-rtmp-url" value="rtmp://a.rtmp.youtube.com/live2" />
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="cfg-resolution">Resolução de Saída:</label>
+              <select id="cfg-resolution">
+                <option value="1080p">1080p (Full HD 1920x1080)</option>
+                <option value="720p">720p (HD 1280x720)</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="cfg-bitrate">Bitrate de Vídeo:</label>
+              <select id="cfg-bitrate">
+                <option value="6000k">6000 kbps (Alta Qualidade 1080p)</option>
+                <option value="4500k">4500 kbps (Recomendado)</option>
+                <option value="3000k">3000 kbps (Econômico)</option>
+                <option value="2000k">2000 kbps (VPS Leve 720p)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group-checkbox">
+            <label class="checkbox-label">
+              <input type="checkbox" id="cfg-watermark" checked />
+              <span>Exibir marca d'água "TV BRAZA - AO VIVO" no canto da tela</span>
+            </label>
+          </div>
+
+          <div class="form-group-checkbox">
+            <label class="checkbox-label">
+              <input type="checkbox" id="cfg-auto-delete" checked />
+              <span>Excluir vídeos finalizados imediatamente para liberar disco da VPS</span>
+            </label>
+          </div>
+
+          <div class="form-group-checkbox">
+            <label class="checkbox-label">
+              <input type="checkbox" id="cfg-auto-standby" checked />
+              <span>Manter vinheta TV Braza 24h sem interrupção caso a fila fique vazia</span>
+            </label>
+          </div>
+
+          <div class="modal-footer">
+            <button type="submit" class="btn-primary-braza">Salvar Configurações</button>
+            <button type="button" class="btn-cancel" id="btn-cancel-settings">Fechar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- DRAWER: Logs em Tempo Real da Transmissão e Download -->
+  <div class="drawer-backdrop hidden" id="drawer-logs">
+    <div class="drawer-card">
+      <div class="drawer-header">
+        <div class="card-title-group">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2">
+            <polyline points="4 17 10 11 4 5"></polyline>
+            <line x1="12" y1="19" x2="20" y2="19"></line>
+          </svg>
+          <h3>LOGS E TELEMETRIA DA VPS</h3>
+        </div>
+        <div class="drawer-actions">
+          <button class="btn-small-subtle" id="btn-clear-terminal">Limpar</button>
+          <button class="btn-modal-close" id="btn-close-logs">&times;</button>
+        </div>
+      </div>
+
+      <div class="terminal-body" id="terminal-body">
+        <div class="term-line info">[Sistema] Conexão estabelecida com TV Braza Playout Engine.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Notificação Toast -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

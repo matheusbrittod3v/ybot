@@ -1,0 +1,782 @@
+// TV Braza - Studio Playout 24/7 Frontend Controller
+
+let ws = null;
+let currentPlayoutState = null;
+let currentQueue = [];
+let pendingVideoPreview = null;
+let playbackTimer = null;
+let playoutStartTime = null;
+let currentDuration = 0;
+
+// Elementos DOM
+const elLiveStatusPill = document.getElementById('live-status-pill');
+const elLiveStatusText = document.getElementById('live-status-text');
+const elStatDiskVal = document.getElementById('stat-disk-val');
+const elStatDiskBar = document.getElementById('stat-disk-bar');
+const elStatRamVal = document.getElementById('stat-ram-val');
+const elStatCpuVal = document.getElementById('stat-cpu-val');
+const elStatMediaVal = document.getElementById('stat-media-val');
+
+const elAlertNoKey = document.getElementById('alert-no-key');
+const elBtnConfigKeyNow = document.getElementById('btn-config-key-now');
+
+// No Ar Agora
+const elCurrentThumb = document.getElementById('current-thumb');
+const elStandbyDisplay = document.getElementById('standby-display');
+const elNowPlayingBadge = document.getElementById('now-playing-badge');
+const elCurrentTitle = document.getElementById('current-title');
+const elCurrentChannel = document.getElementById('current-channel');
+const elMetricFps = document.getElementById('metric-fps');
+const elMetricBitrate = document.getElementById('metric-bitrate');
+const elPlaybackProgressBar = document.getElementById('playback-progress-bar');
+const elPlaybackElapsed = document.getElementById('playback-elapsed');
+const elPlaybackTotal = document.getElementById('playback-total');
+const elBtnSkipVideo = document.getElementById('btn-skip-video');
+const elBtnToggleStream = document.getElementById('btn-toggle-stream');
+const elLblStreamToggle = document.getElementById('lbl-stream-toggle');
+const elBtnRestartStream = document.getElementById('btn-restart-stream');
+
+// A Seguir
+const elUpNextStatusBadge = document.getElementById('up-next-status-badge');
+const elNextThumb = document.getElementById('next-thumb');
+const elNextEmptyState = document.getElementById('next-empty-state');
+const elNextInfoBox = document.getElementById('next-info-box');
+const elNextTitle = document.getElementById('next-title');
+const elNextChannel = document.getElementById('next-channel');
+const elNextDuration = document.getElementById('next-duration');
+const elDlProgressBar = document.getElementById('dl-progress-bar');
+const elDlPercent = document.getElementById('dl-percent');
+const elDlSpeedLabel = document.getElementById('dl-speed-label');
+
+// Adicionar Programação
+const elInputYtUrl = document.getElementById('input-yt-url');
+const elBtnInspectUrl = document.getElementById('btn-inspect-url');
+const elSpinnerInspect = document.getElementById('spinner-inspect');
+const elUrlPreviewCard = document.getElementById('url-preview-card');
+const elPreviewCardThumb = document.getElementById('preview-card-thumb');
+const elPreviewCardTitle = document.getElementById('preview-card-title');
+const elPreviewCardChannel = document.getElementById('preview-card-channel');
+const elPreviewCardDuration = document.getElementById('preview-card-duration');
+const elBtnConfirmAdd = document.getElementById('btn-confirm-add');
+const elBtnCancelPreview = document.getElementById('btn-cancel-preview');
+
+// Fila e Histórico
+const elQueueList = document.getElementById('queue-list');
+const elQueueCount = document.getElementById('queue-count');
+const elEmptyQueueMsg = document.getElementById('empty-queue-msg');
+const elBtnClearQueue = document.getElementById('btn-clear-queue');
+const elHistoryList = document.getElementById('history-list');
+const elEmptyHistoryMsg = document.getElementById('empty-history-msg');
+const elBtnClearHistory = document.getElementById('btn-clear-history');
+
+// Modais e Drawers
+const elModalSettings = document.getElementById('modal-settings');
+const elBtnOpenSettings = document.getElementById('btn-open-settings');
+const elBtnCloseSettings = document.getElementById('btn-close-settings');
+const elBtnCancelSettings = document.getElementById('btn-cancel-settings');
+const elFormSettings = document.getElementById('form-settings');
+const elCfgStreamKey = document.getElementById('cfg-stream-key');
+const elCfgRtmpUrl = document.getElementById('cfg-rtmp-url');
+const elCfgResolution = document.getElementById('cfg-resolution');
+const elCfgBitrate = document.getElementById('cfg-bitrate');
+const elCfgWatermark = document.getElementById('cfg-watermark');
+const elCfgAutoDelete = document.getElementById('cfg-auto-delete');
+const elCfgAutoStandby = document.getElementById('cfg-auto-standby');
+const elBtnToggleKeyEye = document.getElementById('btn-toggle-key-eye');
+
+const elDrawerLogs = document.getElementById('drawer-logs');
+const elBtnOpenLogs = document.getElementById('btn-open-logs');
+const elBtnCloseLogs = document.getElementById('btn-close-logs');
+const elTerminalBody = document.getElementById('terminal-body');
+const elBtnClearTerminal = document.getElementById('btn-clear-terminal');
+const elToastContainer = document.getElementById('toast-container');
+
+// Inicialização
+document.addEventListener('DOMContentLoaded', () => {
+  initWebSocket();
+  fetchStatus();
+  fetchQueue();
+  fetchHistory();
+  setupEventListeners();
+
+  // Inicia contador contínuo de tempo
+  playbackTimer = setInterval(updateLiveTimeTicker, 1000);
+});
+
+// ============================================================
+// WEBSOCKET EM TEMPO REAL
+// ============================================================
+function initWebSocket() {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsUrl = `${protocol}//${window.location.host}`;
+
+  ws = new WebSocket(wsUrl);
+
+  ws.onopen = () => {
+    logTerminal('info', 'WebSocket conectado ao servidor da TV Braza.');
+  };
+
+  ws.onmessage = (event) => {
+    try {
+      const msg = JSON.parse(event.data);
+      handleWsMessage(msg);
+    } catch (e) {
+      console.error('Erro ao processar mensagem WS:', e);
+    }
+  };
+
+  ws.onclose = () => {
+    logTerminal('warning', 'Conexão WebSocket perdida. Reconectando em 3s...');
+    setTimeout(initWebSocket, 3000);
+  };
+
+  ws.onerror = (err) => {
+    console.warn('Erro WS:', err);
+  };
+}
+
+function handleWsMessage(msg) {
+  const { type, data } = msg;
+
+  switch (type) {
+    case 'init_state':
+      if (data.system) updateSystemStats(data.system);
+      if (data.playout) updatePlayoutDisplay(data.playout);
+      if (data.queue) renderQueue(data.queue);
+      break;
+
+    case 'telemetry':
+      if (data.system) updateSystemStats(data.system);
+      if (data.playout) updateStreamMetrics(data.playout);
+      break;
+
+    case 'stream_stats':
+      if (data.fps) elMetricFps.textContent = `${data.fps.toFixed(1)} FPS`;
+      if (data.bitrate) elMetricBitrate.textContent = data.bitrate;
+      break;
+
+    case 'download_start':
+      logTerminal('info', `[Download] Iniciando: ${data.item?.title || 'Vídeo'}`);
+      fetchQueue();
+      fetchStatus();
+      break;
+
+    case 'download_progress':
+      updateDownloadProgress(data);
+      break;
+
+    case 'download_complete':
+      logTerminal('success', `[Download] Concluído: ${data.item?.title}`);
+      showToast(`Vídeo "${data.item?.title}" pré-baixado no disco!`, 'success');
+      fetchQueue();
+      fetchStatus();
+      break;
+
+    case 'download_error':
+      logTerminal('error', `[Download] Falha no download: ${data.item?.title || data.error}`);
+      showToast('Erro ao baixar vídeo do YouTube', 'error');
+      fetchQueue();
+      break;
+
+    case 'video_started':
+      logTerminal('success', `[Playout] NO AR AGORA: "${data.item?.title}"`);
+      showToast(`Iniciada transmissão: ${data.item?.title}`, 'info');
+      fetchStatus();
+      fetchQueue();
+      break;
+
+    case 'standby_started':
+      logTerminal('info', '[Playout] Vinheta Standby TV Braza ativada (Sem interrupção no YouTube).');
+      fetchStatus();
+      break;
+
+    case 'playout_stopped':
+      logTerminal('warning', '[Playout] Transmissão interrompida.');
+      fetchStatus();
+      break;
+  }
+}
+
+// ============================================================
+// ATUALIZAÇÃO DA INTERFACE
+// ============================================================
+function updateSystemStats(sys) {
+  if (!sys) return;
+
+  // Disco da VPS
+  if (sys.disk) {
+    elStatDiskVal.textContent = `${sys.disk.usedFormatted} / ${sys.disk.totalFormatted} (${sys.disk.usedPercent}%)`;
+    elStatDiskBar.style.width = `${Math.min(sys.disk.usedPercent, 100)}%`;
+    if (sys.disk.usedPercent > 85) {
+      elStatDiskBar.style.background = 'var(--braza-red)';
+    } else {
+      elStatDiskBar.style.background = 'linear-gradient(90deg, #10b981, #f59e0b)';
+    }
+  }
+
+  // RAM e CPU
+  if (sys.memory) {
+    elStatRamVal.textContent = `${sys.memory.usedPercent}%`;
+  }
+  if (sys.cpu) {
+    elStatCpuVal.textContent = `${sys.cpu.cores}c (${sys.cpu.load1m})`;
+  }
+
+  // Quantidade de arquivos MP4 no disco
+  if (sys.media) {
+    elStatMediaVal.textContent = `${sys.media.fileCount} vídeos (${sys.media.totalSizeFormatted})`;
+  }
+}
+
+function updatePlayoutDisplay(playout) {
+  currentPlayoutState = playout;
+
+  // Status Pill
+  elLiveStatusPill.className = 'live-status-pill';
+  if (playout.state === 'PLAYING') {
+    elLiveStatusText.textContent = 'NO AR AO VIVO';
+    elNowPlayingBadge.textContent = 'AO VIVO NO YOUTUBE';
+    elNowPlayingBadge.style.backgroundColor = 'rgba(239, 68, 68, 0.9)';
+    elLblStreamToggle.textContent = 'Parar Playout';
+  } else if (playout.state === 'STANDBY') {
+    elLiveStatusPill.classList.add('standby');
+    elLiveStatusText.textContent = 'STANDBY 24H';
+    elNowPlayingBadge.textContent = 'STANDBY ATIVO';
+    elNowPlayingBadge.style.backgroundColor = 'rgba(245, 158, 11, 0.9)';
+    elLblStreamToggle.textContent = 'Parar Playout';
+  } else {
+    elLiveStatusPill.classList.add('stopped');
+    elLiveStatusText.textContent = 'OFFLINE';
+    elNowPlayingBadge.textContent = 'SINAL PARADO';
+    elNowPlayingBadge.style.backgroundColor = 'rgba(100, 116, 139, 0.9)';
+    elLblStreamToggle.textContent = 'Iniciar Playout';
+  }
+
+  // Alerta de Chave
+  if (playout.isConfigured === false) {
+    elAlertNoKey.classList.remove('hidden');
+  } else {
+    elAlertNoKey.classList.add('hidden');
+  }
+}
+
+function updateStreamMetrics(playout) {
+  if (playout.fps !== undefined) {
+    elMetricFps.textContent = `${playout.fps.toFixed(1)} FPS`;
+  }
+  if (playout.bitrate) {
+    elMetricBitrate.textContent = playout.bitrate;
+  }
+}
+
+function updateDownloadProgress(data) {
+  // Se for o próximo vídeo, atualiza a barra de progresso do card "A Seguir"
+  elDlPercent.textContent = `${data.progress.toFixed(0)}%`;
+  elDlProgressBar.style.width = `${data.progress}%`;
+  elDlSpeedLabel.textContent = `Velocidade: ${data.speed} | Restante: ${data.eta}`;
+  elUpNextStatusBadge.className = 'badge-status downloading';
+  elUpNextStatusBadge.textContent = `BAIXANDO ${data.progress.toFixed(0)}%`;
+
+  // Atualiza também o chip na lista de fila
+  const chip = document.getElementById(`status-chip-${data.id}`);
+  if (chip) {
+    chip.className = 'queue-status-chip downloading';
+    chip.textContent = `Baixando ${data.progress.toFixed(0)}%`;
+  }
+}
+
+function updateLiveTimeTicker() {
+  if (!playoutStartTime || currentPlayoutState?.state !== 'PLAYING') {
+    return;
+  }
+
+  const elapsedSec = Math.floor((Date.now() - playoutStartTime) / 1000);
+  elPlaybackElapsed.textContent = formatTime(elapsedSec);
+
+  if (currentDuration > 0) {
+    const percent = Math.min((elapsedSec / currentDuration) * 100, 100);
+    elPlaybackProgressBar.style.width = `${percent}%`;
+    elPlaybackTotal.textContent = formatTime(currentDuration);
+  }
+}
+
+// ============================================================
+// REQUISIÇÕES REST API
+// ============================================================
+async function fetchStatus() {
+  try {
+    const res = await fetch('/api/status');
+    const data = await res.json();
+    if (data.success) {
+      updatePlayoutDisplay(data.playout);
+      updateSystemStats(data.system);
+
+      // Atualiza No Ar Agora
+      if (data.activeItem) {
+        elCurrentTitle.textContent = data.activeItem.title;
+        elCurrentChannel.textContent = `Canal: ${data.activeItem.channel || 'TV Braza'}`;
+        if (data.activeItem.thumbnail) {
+          elCurrentThumb.src = data.activeItem.thumbnail;
+          elCurrentThumb.classList.remove('hidden');
+          elStandbyDisplay.classList.add('hidden');
+        }
+        playoutStartTime = data.playout.startedAt || Date.now();
+        currentDuration = data.activeItem.duration || 0;
+      } else {
+        elCurrentTitle.textContent = 'TV Braza - Transmissão Contínua 24h';
+        elCurrentChannel.textContent = 'Aguardando próxima atração';
+        elCurrentThumb.classList.add('hidden');
+        elStandbyDisplay.classList.remove('hidden');
+        playoutStartTime = null;
+        currentDuration = 0;
+        elPlaybackProgressBar.style.width = '100%';
+        elPlaybackElapsed.textContent = '24:00:00';
+        elPlaybackTotal.textContent = 'STANDBY';
+      }
+
+      // Atualiza A Seguir
+      if (data.nextItem) {
+        elNextThumb.src = data.nextItem.thumbnail || '';
+        elNextThumb.classList.remove('hidden');
+        elNextEmptyState.classList.add('hidden');
+        elNextInfoBox.classList.remove('hidden');
+
+        elNextTitle.textContent = data.nextItem.title;
+        elNextChannel.textContent = `Canal: ${data.nextItem.channel || 'Desconhecido'}`;
+        elNextDuration.textContent = data.nextItem.durationFormatted || '00:00';
+
+        if (data.nextItem.status === 'ready') {
+          elUpNextStatusBadge.className = 'badge-status ready';
+          elUpNextStatusBadge.textContent = 'PRÉ-BAIXADO (PRONTO)';
+          elDlProgressBar.style.width = '100%';
+          elDlPercent.textContent = '100%';
+          elDlSpeedLabel.textContent = 'Arquivo verificado e pronto para começar sem delay.';
+        } else if (data.nextItem.status === 'downloading') {
+          elUpNextStatusBadge.className = 'badge-status downloading';
+          elUpNextStatusBadge.textContent = `BAIXANDO ${data.nextItem.downloadProgress || 0}%`;
+        } else {
+          elUpNextStatusBadge.className = 'badge-status';
+          elUpNextStatusBadge.textContent = 'AGUARDANDO DOWNLOAD';
+          elDlProgressBar.style.width = '0%';
+          elDlPercent.textContent = '0%';
+          elDlSpeedLabel.textContent = 'O download iniciará automaticamente antes do término do vídeo atual.';
+        }
+      } else {
+        elNextThumb.classList.add('hidden');
+        elNextEmptyState.classList.remove('hidden');
+        elNextInfoBox.classList.add('hidden');
+        elUpNextStatusBadge.className = 'badge-status';
+        elUpNextStatusBadge.textContent = 'VAZIO';
+      }
+    }
+  } catch (err) {
+    console.error('Erro ao consultar status:', err);
+  }
+}
+
+async function fetchQueue() {
+  try {
+    const res = await fetch('/api/queue');
+    const data = await res.json();
+    if (data.success) {
+      renderQueue(data.queue);
+    }
+  } catch (err) {
+    console.error('Erro ao consultar fila:', err);
+  }
+}
+
+function renderQueue(queue) {
+  currentQueue = queue;
+  elQueueCount.textContent = queue.length;
+
+  if (queue.length === 0) {
+    elEmptyQueueMsg.classList.remove('hidden');
+    elQueueList.innerHTML = '';
+    elQueueList.appendChild(elEmptyQueueMsg);
+    return;
+  }
+
+  elEmptyQueueMsg.classList.add('hidden');
+  elQueueList.innerHTML = '';
+
+  queue.forEach((item, index) => {
+    const isPlaying = item.status === 'playing';
+    const row = document.createElement('div');
+    row.className = `queue-item ${isPlaying ? 'playing' : ''}`;
+
+    let statusClass = 'queued';
+    let statusText = 'Na Fila';
+    if (isPlaying) {
+      statusClass = 'playing';
+      statusText = 'No Ar';
+    } else if (item.status === 'ready') {
+      statusClass = 'ready';
+      statusText = 'Baixado';
+    } else if (item.status === 'downloading') {
+      statusClass = 'downloading';
+      statusText = `Baixando ${item.downloadProgress || 0}%`;
+    }
+
+    row.innerHTML = `
+      <div class="queue-order">${index + 1}</div>
+      <img src="${item.thumbnail || 'assets/logo.svg'}" class="queue-thumb" alt="Thumb">
+      <div class="queue-info">
+        <div class="queue-item-title" title="${escapeHtml(item.title)}">${escapeHtml(item.title)}</div>
+        <div class="queue-item-meta">
+          <span>Canal: ${escapeHtml(item.channel || 'YouTube')}</span>
+          <span>Duração: <strong>${item.durationFormatted || '00:00'}</strong></span>
+          <span class="queue-status-chip ${statusClass}" id="status-chip-${item.id}">${statusText}</span>
+        </div>
+      </div>
+      <div class="queue-actions">
+        ${!isPlaying && index > 0 ? `
+          <button class="btn-queue-move" onclick="moveQueueItem('${item.id}', -1)" title="Subir na fila">▲</button>
+        ` : ''}
+        ${!isPlaying && index < queue.length - 1 ? `
+          <button class="btn-queue-move" onclick="moveQueueItem('${item.id}', 1)" title="Descer na fila">▼</button>
+        ` : ''}
+        ${!isPlaying ? `
+          <button class="btn-queue-delete" onclick="deleteQueueItem('${item.id}')" title="Remover da grade">✕</button>
+        ` : ''}
+      </div>
+    `;
+
+    elQueueList.appendChild(row);
+  });
+}
+
+async function fetchHistory() {
+  try {
+    const res = await fetch('/api/history');
+    const data = await res.json();
+    if (data.success) {
+      renderHistory(data.history);
+    }
+  } catch (err) {
+    console.error('Erro ao consultar histórico:', err);
+  }
+}
+
+function renderHistory(history) {
+  if (!history || history.length === 0) {
+    elEmptyHistoryMsg.classList.remove('hidden');
+    elHistoryList.innerHTML = '';
+    elHistoryList.appendChild(elEmptyHistoryMsg);
+    return;
+  }
+
+  elEmptyHistoryMsg.classList.add('hidden');
+  elHistoryList.innerHTML = '';
+
+  history.forEach(item => {
+    const row = document.createElement('div');
+    row.className = 'history-item';
+    const finishedDate = item.finishedAt ? new Date(item.finishedAt).toLocaleTimeString('pt-BR') : '';
+
+    row.innerHTML = `
+      <span class="history-item-title">${escapeHtml(item.title)}</span>
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <span style="color: var(--text-dim); font-size: 11px;">Exibido às ${finishedDate}</span>
+        <span class="history-cleaned-badge">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="20 6 9 17 4 12"></polyline>
+          </svg>
+          Arquivo apagado (Espaço liberado)
+        </span>
+      </div>
+    `;
+    elHistoryList.appendChild(row);
+  });
+}
+
+// ============================================================
+// AÇÕES DO USUÁRIO
+// ============================================================
+function setupEventListeners() {
+  // Consultar link do YouTube
+  elBtnInspectUrl.addEventListener('click', handleInspectUrl);
+  elInputYtUrl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') handleInspectUrl();
+  });
+
+  // Confirmar adição
+  elBtnConfirmAdd.addEventListener('click', handleConfirmAdd);
+  elBtnCancelPreview.addEventListener('click', () => {
+    elUrlPreviewCard.classList.add('hidden');
+    pendingVideoPreview = null;
+  });
+
+  // Pular vídeo
+  elBtnSkipVideo.addEventListener('click', async () => {
+    if (!confirm('Deseja realmente pular este vídeo? O arquivo será apagado imediatamente para liberar espaço e a próxima atração começará.')) {
+      return;
+    }
+    try {
+      const res = await fetch('/api/control/skip', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        showToast('Vídeo pulado e arquivo excluído!', 'info');
+        fetchStatus();
+      }
+    } catch (err) {
+      showToast('Erro ao pular vídeo', 'error');
+    }
+  });
+
+  // Iniciar / Parar Playout
+  elBtnToggleStream.addEventListener('click', async () => {
+    const isPlayingOrStandby = currentPlayoutState?.state === 'PLAYING' || currentPlayoutState?.state === 'STANDBY';
+    const endpoint = isPlayingOrStandby ? '/api/control/stop' : '/api/control/start';
+    try {
+      const res = await fetch(endpoint, { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        showToast(isPlayingOrStandby ? 'Transmissão parada.' : 'Transmissão iniciada!', 'success');
+        fetchStatus();
+      }
+    } catch (err) {
+      showToast('Erro ao controlar transmissão', 'error');
+    }
+  });
+
+  // Reiniciar FFmpeg
+  elBtnRestartStream.addEventListener('click', async () => {
+    try {
+      const res = await fetch('/api/control/restart', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        showToast('Processo FFmpeg reiniciado.', 'info');
+        fetchStatus();
+      }
+    } catch (err) {
+      showToast('Erro ao reiniciar FFmpeg', 'error');
+    }
+  });
+
+  // Limpar fila
+  elBtnClearQueue.addEventListener('click', async () => {
+    if (!confirm('Deseja limpar todos os vídeos não exibidos da fila?')) return;
+    try {
+      await fetch('/api/queue/clear', { method: 'POST' });
+      fetchQueue();
+      fetchStatus();
+      showToast('Fila limpa com sucesso.', 'info');
+    } catch (err) {
+      showToast('Erro ao limpar fila', 'error');
+    }
+  });
+
+  // Limpar Histórico
+  elBtnClearHistory.addEventListener('click', async () => {
+    await fetch('/api/history/clear', { method: 'POST' });
+    fetchHistory();
+    showToast('Histórico limpo.', 'info');
+  });
+
+  // Modais
+  elBtnOpenSettings.addEventListener('click', openSettingsModal);
+  elBtnConfigKeyNow.addEventListener('click', openSettingsModal);
+  elBtnCloseSettings.addEventListener('click', () => elModalSettings.classList.add('hidden'));
+  elBtnCancelSettings.addEventListener('click', () => elModalSettings.classList.add('hidden'));
+
+  elBtnToggleKeyEye.addEventListener('click', () => {
+    elCfgStreamKey.type = elCfgStreamKey.type === 'password' ? 'text' : 'password';
+  });
+
+  elFormSettings.addEventListener('submit', handleSaveSettings);
+
+  // Drawer de logs
+  elBtnOpenLogs.addEventListener('click', () => elDrawerLogs.classList.remove('hidden'));
+  elBtnCloseLogs.addEventListener('click', () => elDrawerLogs.classList.add('hidden'));
+  elBtnClearTerminal.addEventListener('click', () => {
+    elTerminalBody.innerHTML = '';
+  });
+}
+
+async function handleInspectUrl() {
+  const url = elInputYtUrl.value.trim();
+  if (!url) {
+    showToast('Cole uma URL válida do YouTube!', 'warning');
+    return;
+  }
+
+  elBtnInspectUrl.disabled = true;
+  elSpinnerInspect.classList.remove('hidden');
+
+  try {
+    const res = await fetch('/api/queue/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url })
+    });
+    const data = await res.json();
+
+    if (data.success && data.info) {
+      pendingVideoPreview = data.info;
+      elPreviewCardThumb.src = data.info.thumbnail;
+      elPreviewCardTitle.textContent = data.info.title;
+      elPreviewCardChannel.textContent = `Canal: ${data.info.channel}`;
+      elPreviewCardDuration.textContent = `Duração: ${data.info.durationFormatted}`;
+      elUrlPreviewCard.classList.remove('hidden');
+    } else {
+      showToast(data.error || 'Não foi possível obter dados do vídeo', 'error');
+    }
+  } catch (err) {
+    showToast('Erro de comunicação ao consultar link', 'error');
+  } finally {
+    elBtnInspectUrl.disabled = false;
+    elSpinnerInspect.classList.add('hidden');
+  }
+}
+
+async function handleConfirmAdd() {
+  if (!pendingVideoPreview) return;
+
+  try {
+    const res = await fetch('/api/queue/add', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(pendingVideoPreview)
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      showToast(`"${data.item.title}" adicionado à grade!`, 'success');
+      elInputYtUrl.value = '';
+      elUrlPreviewCard.classList.add('hidden');
+      pendingVideoPreview = null;
+      fetchQueue();
+      fetchStatus();
+    } else {
+      showToast(data.error || 'Erro ao enfileirar vídeo', 'error');
+    }
+  } catch (err) {
+    showToast('Erro ao salvar vídeo na grade', 'error');
+  }
+}
+
+window.deleteQueueItem = async function(id) {
+  try {
+    await fetch(`/api/queue/${id}`, { method: 'DELETE' });
+    showToast('Vídeo removido da programação.', 'info');
+    fetchQueue();
+    fetchStatus();
+  } catch (err) {
+    showToast('Erro ao remover vídeo', 'error');
+  }
+};
+
+window.moveQueueItem = async function(id, direction) {
+  const ids = currentQueue.map(i => i.id);
+  const idx = ids.indexOf(id);
+  if (idx === -1) return;
+
+  const targetIdx = idx + direction;
+  if (targetIdx < 0 || targetIdx >= ids.length) return;
+
+  const temp = ids[idx];
+  ids[idx] = ids[targetIdx];
+  ids[targetIdx] = temp;
+
+  try {
+    await fetch('/api/queue/reorder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ order: ids })
+    });
+    fetchQueue();
+    fetchStatus();
+  } catch (err) {
+    showToast('Erro ao reordenar grade', 'error');
+  }
+};
+
+// ============================================================
+// CONFIGURAÇÕES
+// ============================================================
+async function openSettingsModal() {
+  try {
+    const res = await fetch('/api/settings');
+    const data = await res.json();
+    if (data.success) {
+      const s = data.settings;
+      elCfgStreamKey.value = s.youtubeStreamKey || '';
+      elCfgRtmpUrl.value = s.youtubeRtmpUrl || 'rtmp://a.rtmp.youtube.com/live2';
+      elCfgResolution.value = s.resolution || '1080p';
+      elCfgBitrate.value = s.videoBitrate || '4500k';
+      elCfgWatermark.checked = s.enableWatermark !== false;
+      elCfgAutoDelete.checked = s.autoDeleteFinished !== false;
+      elCfgAutoStandby.checked = s.autoLoopStandby !== false;
+      elModalSettings.classList.remove('hidden');
+    }
+  } catch (err) {
+    showToast('Erro ao carregar configurações', 'error');
+  }
+}
+
+async function handleSaveSettings(e) {
+  e.preventDefault();
+  const updates = {
+    youtubeStreamKey: elCfgStreamKey.value.trim(),
+    youtubeRtmpUrl: elCfgRtmpUrl.value.trim(),
+    resolution: elCfgResolution.value,
+    videoBitrate: elCfgBitrate.value,
+    enableWatermark: elCfgWatermark.checked,
+    autoDeleteFinished: elCfgAutoDelete.checked,
+    autoLoopStandby: elCfgAutoStandby.checked
+  };
+
+  try {
+    const res = await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates)
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast('Configurações salvas com sucesso!', 'success');
+      elModalSettings.classList.add('hidden');
+      fetchStatus();
+    }
+  } catch (err) {
+    showToast('Erro ao salvar configurações', 'error');
+  }
+}
+
+// ============================================================
+// LOGS E TOASTS
+// ============================================================
+function logTerminal(level, text) {
+  const line = document.createElement('div');
+  line.className = `term-line ${level}`;
+  const time = new Date().toLocaleTimeString('pt-BR');
+  line.textContent = `[${time}] ${text}`;
+  elTerminalBody.appendChild(line);
+  elTerminalBody.scrollTop = elTerminalBody.scrollHeight;
+}
+
+function showToast(message, type = 'info') {
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  toast.textContent = message;
+  elToastContainer.appendChild(toast);
+
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    setTimeout(() => toast.remove(), 300);
+  }, 4000);
+}
+
+function formatTime(totalSeconds) {
+  if (!totalSeconds || isNaN(totalSeconds)) return '00:00:00';
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = Math.floor(totalSeconds % 60);
+  return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}

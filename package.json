@@ -1,0 +1,27 @@
+{
+  "name": "tvbraza-live-studio",
+  "version": "1.0.0",
+  "description": "Sistema de Transmissão 24/7 TV Braza no YouTube com Painel Playout e Limpeza Automática de Disco",
+  "main": "server/src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server/src/index.js",
+    "dev": "node --watch server/src/index.js"
+  },
+  "keywords": [
+    "tvbraza",
+    "playout",
+    "youtube-live",
+    "ffmpeg",
+    "yt-dlp",
+    "docker"
+  ],
+  "author": "TV Braza",
+  "license": "MIT",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "ws": "^8.18.0"
+  }
+}
