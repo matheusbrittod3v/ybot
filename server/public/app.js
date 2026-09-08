@@ -787,6 +787,32 @@ function setupEventListeners() {
     });
   }
 
+  const elBtnGenCookies = document.getElementById('btn-generate-cookies');
+  const elSpinnerGenCookies = document.getElementById('spinner-generate-cookies');
+  if (elBtnGenCookies) {
+    elBtnGenCookies.addEventListener('click', async () => {
+      try {
+        elBtnGenCookies.disabled = true;
+        if (elSpinnerGenCookies) elSpinnerGenCookies.classList.remove('hidden');
+        showToast('Gerando cookies sintéticos e tokens de visitante na VPS...', 'info');
+
+        const res = await fetch('/api/cookies/generate', { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+          showToast('Cookies sintéticos ativados com sucesso na VPS!', 'success');
+          checkCookiesStatus();
+        } else {
+          showToast(data.error || 'Erro ao gerar cookies sintéticos', 'error');
+        }
+      } catch (err) {
+        showToast('Falha ao acionar gerador de cookies', 'error');
+      } finally {
+        elBtnGenCookies.disabled = false;
+        if (elSpinnerGenCookies) elSpinnerGenCookies.classList.add('hidden');
+      }
+    });
+  }
+
   // Drawer de logs
   elBtnOpenLogs.addEventListener('click', () => elDrawerLogs.classList.remove('hidden'));
   elBtnCloseLogs.addEventListener('click', () => elDrawerLogs.classList.add('hidden'));

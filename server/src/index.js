@@ -2,6 +2,7 @@ import express from 'express';
 import http from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import path from 'path';
+import fs from 'fs';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
@@ -9,7 +10,7 @@ import apiRouter from './routes/api.js';
 import { streamer } from './engine/streamer.js';
 import { downloader } from './engine/downloader.js';
 import { getSystemStats } from './utils/system.js';
-import { db, THUMBS_DIR } from './db.js';
+import { db, DATA_DIR, THUMBS_DIR } from './db.js';
 
 dotenv.config();
 
@@ -107,6 +108,20 @@ server.listen(PORT, '0.0.0.0', () => {
   if (settings.autoLoopStandby) {
     console.log('[Autostart] Inicializando motor de transmissão contínua...');
     streamer.start();
+  }
+
+  // Auto-gera cookies sintéticos se não existirem no disco para prevenir erros de bot
+  const cookiesPath = path.join(DATA_DIR, 'cookies.txt');
+  if (!fs.existsSync(cookiesPath) || fs.statSync(cookiesPath).size === 0) {
+    const cookieGen = path.join(__dirname, 'utils/cookie_generator.py');
+    if (fs.existsSync(cookieGen)) {
+      console.log('[Autostart] Inicializando cookies sintéticos para bypass anti-bot...');
+      import('child_process').then(({ execFile }) => {
+        execFile('python3', [cookieGen, cookiesPath], (err) => {
+          if (!err) console.log('[Autostart] Cookies sintéticos ativados automaticamente!');
+        });
+      });
+    }
   }
 });
 

@@ -2,6 +2,7 @@ import express from 'express';
 import crypto from 'crypto';
 import path from 'path';
 import fs from 'fs';
+import { fileURLToPath } from 'url';
 import multer from 'multer';
 import { db, DATA_DIR, THUMBS_DIR } from '../db.js';
 import { streamer } from '../engine/streamer.js';
@@ -9,6 +10,10 @@ import { downloader } from '../engine/downloader.js';
 import { fetchVideoInfo } from '../utils/youtube.js';
 import { getSystemStats } from '../utils/system.js';
 import { youtubeUpdater } from '../utils/youtube-updater.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const COOKIE_GENERATOR_SCRIPT = path.join(__dirname, '../utils/cookie_generator.py');
 
 const router = express.Router();
 
@@ -396,6 +401,25 @@ router.delete('/cookies', (req, res) => {
     console.log('[Cookies] Arquivo cookies.txt removido.');
   }
   res.json({ success: true });
+});
+
+// Gerar cookies sintéticos/falsos automaticamente na VPS
+router.post('/cookies/generate', async (req, res) => {
+  const cookiesPath = path.join(DATA_DIR, 'cookies.txt');
+  try {
+    const { execFile } = await import('child_process');
+    const { promisify } = await import('util');
+    const execFileAsync = promisify(execFile);
+
+    await execFileAsync('python3', [COOKIE_GENERATOR_SCRIPT, cookiesPath], { timeout: 15000 });
+    const exists = fs.existsSync(cookiesPath);
+    const size = exists ? fs.statSync(cookiesPath).size : 0;
+    console.log(`[Cookies] Cookies automáticos gerados com sucesso (${size} bytes)!`);
+    res.json({ success: true, message: 'Cookies sintéticos gerados e salvos com sucesso na VPS!', size });
+  } catch (err) {
+    console.error('[Cookies] Erro ao gerar cookies:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 export default router;
