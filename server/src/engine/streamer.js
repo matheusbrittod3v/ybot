@@ -101,6 +101,15 @@ class StreamerEngine {
     this.shouldRun = true;
     console.log('[Streamer] Iniciando Playout 24/7 TV Braza...');
     await ensureStandbyVideo();
+
+    // Se a stream key ainda não estiver configurada, tenta obter automaticamente do YouTube Studio
+    if (!this.getStreamTarget()) {
+      try {
+        console.log('[Streamer] Chave de transmissão RTMP não detectada no banco. Consultando YouTube Studio...');
+        await youtubeUpdater.detectAndSaveActiveBroadcast();
+      } catch (_) {}
+    }
+
     this.playNextInQueue();
   }
 
@@ -155,15 +164,19 @@ class StreamerEngine {
     this.currentMode = 'VIDEO';
     this.currentItem = item;
 
-    const settings = db.getSettings();
-    const rtmpTarget = this.getStreamTarget();
     const isDirect = item.streamMode === 'direct';
 
-    console.log(`[Streamer] INICIANDO NO AR: "${item.title}" [Modo: ${isDirect ? '⚡ Stream Direto (Sem Anúncios)' : '💾 Arquivo'}]`);
-    db.updateQueueItem(item.id, {
-      status: 'playing',
-      startedAt: new Date().toISOString()
-    });
+    console.log(`[Streamer] INICIANDO NO AR: "${item.title}" ${isDirect ? '[Modo: ⚡ Stream Direto (Sem Anúncios)]' : '[Arquivo Local]'}`);
+
+    // Garante que o alvo RTMP está configurado ou detecta automaticamente via Google OAuth
+    let rtmpTarget = this.getStreamTarget();
+    if (!rtmpTarget) {
+      console.log('[Streamer] Chave RTMP ausente. Detectando Stream Key automaticamente no YouTube Studio...');
+      await youtubeUpdater.detectAndSaveActiveBroadcast();
+      rtmpTarget = this.getStreamTarget();
+    }
+
+    const settings = db.getSettings();
 
     db.updatePlayoutState({
       state: 'PLAYING',
@@ -186,9 +199,11 @@ class StreamerEngine {
     const videoBitrate = settings.videoBitrate || '4500k';
     const audioBitrate = settings.audioBitrate || '160k';
 
-    // Se a chave do YouTube não foi configurada, emite aviso mas roda localmente ou em loop
-    if (!rtmpTarget) {
-      console.warn('[Streamer] AVISO: Chave do YouTube não configurada! Configure a Stream Key no Painel Web.');
+    if (rtmpTarget) {
+      const maskedTarget = rtmpTarget.replace(/live2\/[a-zA-Z0-9_-]+$/, 'live2/****');
+      console.log(`[Streamer] 📡 Destino RTMP ativo configurado: ${maskedTarget}`);
+    } else {
+      console.warn('[Streamer] ⚠️ Chave do YouTube não configurada! Configure a Stream Key no Painel Web ou via Google OAuth.');
     }
 
     let inputArgs = [];
@@ -299,6 +314,19 @@ class StreamerEngine {
       this.currentItem = null;
       this.playNextInQueue();
     }, pipeSourceProc);
+
+    // Se estiver transmitindo para o YouTube, garante a ativação pública da Live no YouTube Studio
+    if (rtmpTarget) {
+      setTimeout(async () => {
+        try {
+          const currentSet = db.getSettings();
+          const broadcastId = currentSet.youtubeBroadcastVideoId;
+          if (broadcastId && this.currentMode === 'VIDEO') {
+            await youtubeUpdater.transitionBroadcastToLive(broadcastId);
+          }
+        } catch (_) {}
+      }, 10000);
+    }
   }
 
   spawnFfmpeg(args, onFinish, pipeSourceProc = null) {
@@ -350,6 +378,11 @@ class StreamerEngine {
           bitrate,
           mode: this.currentMode
         });
+      } else {
+        const trimmed = line.trim();
+        if (trimmed && (trimmed.includes('Error') || trimmed.includes('error') || trimmed.includes('Server returned') || trimmed.includes('Connection refused') || trimmed.includes('Invalid data') || trimmed.includes('Failed to open'))) {
+          console.warn(`[Streamer FFmpeg aviso] ${trimmed.slice(0, 180)}`);
+        }
       }
     });
 
@@ -448,9 +481,18 @@ class StreamerEngine {
     }
 
     if (rtmpTarget) {
+      const maskedTarget = rtmpTarget.replace(/live2\/[a-zA-Z0-9_-]+$/, 'live2/****');
+      console.log(`[Streamer Standby] 📡 Transmitindo Standby para: ${maskedTarget}`);
       args.push('-f', 'flv', rtmpTarget);
     } else {
+      console.warn('[Streamer Standby] ⚠️ Chave RTMP ausente no Standby. Buscando automaticamente no YouTube Studio...');
       args.push('-f', 'null', '-');
+      youtubeUpdater.detectAndSaveActiveBroadcast().then((broadcast) => {
+        if (broadcast && this.getStreamTarget() && this.currentMode === 'STANDBY') {
+          console.log('[Streamer Standby] Stream Key obtida com sucesso. Conectando Standby à Live do YouTube...');
+          this.streamStandby();
+        }
+      }).catch(() => {});
     }
 
     this.spawnFfmpeg(args, (code) => {

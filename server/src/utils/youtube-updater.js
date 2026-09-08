@@ -117,7 +117,7 @@ class YouTubeMetadataUpdater {
       console.log('[YouTube Updater] Detectando Live ativa automaticamente no canal...');
 
       // 1. Tenta buscar transmissão em status 'active' (ao vivo agora)
-      let res = await fetch('https://www.googleapis.com/youtube/v3/liveBroadcasts?part=id,snippet,status&broadcastStatus=active', {
+      let res = await fetch('https://www.googleapis.com/youtube/v3/liveBroadcasts?part=id,snippet,status,contentDetails&broadcastStatus=active', {
         headers: { Authorization: `Bearer ${token}` }
       });
 
@@ -126,7 +126,7 @@ class YouTubeMetadataUpdater {
 
       // 2. Se não encontrar ativa, busca próxima transmissão programada (upcoming)
       if (!broadcast) {
-        res = await fetch('https://www.googleapis.com/youtube/v3/liveBroadcasts?part=id,snippet,status&broadcastStatus=upcoming&maxResults=1', {
+        res = await fetch('https://www.googleapis.com/youtube/v3/liveBroadcasts?part=id,snippet,status,contentDetails&broadcastStatus=upcoming&maxResults=1', {
           headers: { Authorization: `Bearer ${token}` }
         });
         data = res.ok ? await res.json() : null;
@@ -135,7 +135,7 @@ class YouTubeMetadataUpdater {
 
       // 3. Fallback: busca a transmissão mais recente do canal (all)
       if (!broadcast) {
-        res = await fetch('https://www.googleapis.com/youtube/v3/liveBroadcasts?part=id,snippet,status&broadcastStatus=all&maxResults=1', {
+        res = await fetch('https://www.googleapis.com/youtube/v3/liveBroadcasts?part=id,snippet,status,contentDetails&broadcastStatus=all&maxResults=1', {
           headers: { Authorization: `Bearer ${token}` }
         });
         data = res.ok ? await res.json() : null;
@@ -149,8 +149,33 @@ class YouTubeMetadataUpdater {
 
         console.log(`[YouTube Updater] 🔴 Live ativa detectada com sucesso no canal: ${liveId} ("${liveTitle}", status: ${liveStatus})`);
 
-        // Salva automaticamente nas configurações para cache
-        db.updateSettings({ youtubeBroadcastVideoId: liveId });
+        const settingsUpdate = { youtubeBroadcastVideoId: liveId };
+
+        // 4. Obtém automaticamente a Stream Key e a RTMP Ingestion URL vinculada a esta Live
+        const streamId = broadcast.contentDetails?.boundStreamId;
+        if (streamId) {
+          try {
+            const streamRes = await fetch(`https://www.googleapis.com/youtube/v3/liveStreams?part=cdn,status&id=${streamId}`, {
+              headers: { Authorization: `Bearer ${token}` }
+            });
+            if (streamRes.ok) {
+              const streamData = await streamRes.json();
+              const cdn = streamData.items?.[0]?.cdn?.ingestionInfo;
+              if (cdn && cdn.streamName) {
+                console.log(`[YouTube Updater] 🔑 Chave de Transmissão (Stream Key) obtida automaticamente do YouTube Studio!`);
+                settingsUpdate.youtubeStreamKey = cdn.streamName;
+                if (cdn.ingestionAddress) {
+                  settingsUpdate.youtubeRtmpUrl = cdn.ingestionAddress;
+                }
+              }
+            }
+          } catch (streamErr) {
+            console.warn('[YouTube Updater] Falha ao consultar stream bound:', streamErr.message);
+          }
+        }
+
+        // Salva automaticamente nas configurações para cache e uso imediato no Streamer
+        db.updateSettings(settingsUpdate);
 
         return {
           id: liveId,
@@ -166,6 +191,28 @@ class YouTubeMetadataUpdater {
       console.error('[YouTube Updater] Erro ao detectar live automaticamente:', err.message);
       return null;
     }
+  }
+
+  /**
+   * Transiciona a transmissão para status 'live' (aberta ao público) caso esteja em 'ready' ou 'testing'
+   */
+  async transitionBroadcastToLive(broadcastId) {
+    if (!broadcastId) return false;
+    const token = await this.getValidAccessToken();
+    if (!token) return false;
+
+    try {
+      const res = await fetch(`https://www.googleapis.com/youtube/v3/liveBroadcasts/transition?broadcastStatus=live&id=${broadcastId}&part=id,status`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        console.log(`[YouTube Updater] 🚀 Live ativada AO VIVO no YouTube com sucesso! (status: ${data.status?.lifeCycleStatus})`);
+        return true;
+      }
+    } catch (_) {}
+    return false;
   }
 
   /**
