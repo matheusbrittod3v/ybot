@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { DATA_DIR } from '../db.js';
+import { resolveVideoInfo } from './web_downloader.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -44,7 +45,26 @@ export async function fetchVideoInfo(url) {
   // Normaliza a URL para evitar parâmetros de rastreamento (?is=..., ?si=...) que ativam proteções do YouTube
   const cleanUrl = `https://www.youtube.com/watch?v=${videoId}`;
 
-  // 1. Tenta extrair com pytubefix (Bypass anti-bot nativo sem precisar de cookies)
+  // 1. Tenta obter metadados completos via Web Resolver (imune a bloqueios de IP de datacenter)
+  try {
+    const webData = await resolveVideoInfo(cleanUrl);
+    if (webData && webData.title) {
+      return {
+        videoId,
+        url: cleanUrl,
+        title: webData.title,
+        channel: 'YouTube',
+        duration: webData.duration || 0,
+        durationFormatted: formatDuration(webData.duration || 0),
+        thumbnail: webData.thumbnail || `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
+        views: null
+      };
+    }
+  } catch (webErr) {
+    console.warn(`[YouTube] Web Resolver info falhou (${webErr.message}). Tentando pytubefix...`);
+  }
+
+  // 2. Tenta extrair com pytubefix (Bypass anti-bot nativo sem precisar de cookies)
   try {
     if (fs.existsSync(PYTUBE_INFO_SCRIPT)) {
       const { stdout } = await execFileAsync('python3', [PYTUBE_INFO_SCRIPT, cleanUrl], { timeout: 15000 });

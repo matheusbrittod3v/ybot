@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
 import { db, DATA_DIR, MEDIA_DIR } from '../db.js';
 import { extractYouTubeId } from '../utils/youtube.js';
+import { downloadFromWebResolver } from '../utils/web_downloader.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -112,9 +113,10 @@ class DownloaderEngine {
   }
 
   /**
-   * Orquestra o download com prioridade para a biblioteca nativa pytubefix
-   * (que possui bypass anti-bot automático sem exigir upload de cookies)
-   * e fallback transparente para yt-dlp.
+   * Orquestra o download com prioridade:
+   * 1. Motor Web Resolver (Bypass anti-bot total, sem necessidade de cookies, direto na nuvem)
+   * 2. Biblioteca pytubefix nativa com bypass de clientes
+   * 3. yt-dlp como fallback
    */
   async downloadItem(item) {
     if (this.activeDownload) {
@@ -133,15 +135,59 @@ class DownloaderEngine {
     });
     this.broadcast('download_start', { item: db.getQueueItem(item.id) });
 
-    // 1. Tenta baixar via biblioteca pytubefix (Bypass anti-bot sem precisar de cookies)
+    // 1. Tenta baixar via Motor Web Resolver (Bypass anti-bot total, sem cookies)
+    try {
+      console.log(`[Downloader] [Motor 1] Tentando download via Web Resolver para ${item.title}...`);
+      const abortController = new AbortController();
+      this.activeDownload = {
+        itemId: item.id,
+        abortController,
+        type: 'web'
+      };
+
+      const result = await downloadFromWebResolver(cleanUrl, targetFile, (prog) => {
+        db.updateQueueItem(item.id, {
+          downloadProgress: prog.percent,
+          downloadSpeed: `${prog.speed} (${prog.downloadedMb}/${prog.totalMb})`
+        });
+        this.broadcast('download_progress', {
+          id: item.id,
+          progress: prog.percent,
+          speed: `${prog.speed} [${prog.quality}]`,
+          eta: '',
+          totalSize: prog.totalMb
+        });
+      }, abortController.signal);
+
+      this.activeDownload = null;
+
+      if (result && result.success && fs.existsSync(targetFile) && fs.statSync(targetFile).size > 10240) {
+        const stats = fs.statSync(targetFile);
+        const updated = db.updateQueueItem(item.id, {
+          status: 'ready',
+          downloadProgress: 100,
+          downloadSpeed: 'Concluído',
+          filePath: targetFile,
+          fileSize: stats.size
+        });
+        console.log(`[Downloader] Download de "${item.title}" concluído via Web Resolver (${(stats.size / 1024 / 1024).toFixed(1)} MB)!`);
+        this.broadcast('download_complete', { item: updated });
+        return { success: true, item: updated };
+      }
+    } catch (webErr) {
+      console.warn(`[Downloader] Motor Web Resolver não completou: ${webErr.message}. Tentando pytubefix...`);
+      this.activeDownload = null;
+    }
+
+    // 2. Fallback via biblioteca pytubefix (clientes alternativos)
     const pytubeResult = await this.downloadWithPytube(item, cleanUrl, targetFile);
     if (pytubeResult.success) {
       return pytubeResult;
     }
 
-    console.warn(`[Downloader] pytubefix não completou. Acionando motor de fallback (yt-dlp)...`);
+    console.warn(`[Downloader] pytubefix não completou. Acionando motor final (yt-dlp)...`);
 
-    // 2. Fallback via yt-dlp
+    // 3. Fallback via yt-dlp
     return await this.downloadWithYtDlp(item, cleanUrl, targetFile);
   }
 
@@ -339,7 +385,12 @@ class DownloaderEngine {
   cancelActiveDownload(itemId) {
     if (this.activeDownload && (!itemId || this.activeDownload.itemId === itemId)) {
       try {
-        this.activeDownload.proc.kill('SIGKILL');
+        if (this.activeDownload.abortController) {
+          this.activeDownload.abortController.abort();
+        }
+        if (this.activeDownload.proc) {
+          this.activeDownload.proc.kill('SIGKILL');
+        }
         console.log(`[Downloader] Download cancelado para o item ${this.activeDownload.itemId}`);
       } catch (_) {}
       this.activeDownload = null;
