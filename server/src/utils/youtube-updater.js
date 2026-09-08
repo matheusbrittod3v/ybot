@@ -1,5 +1,6 @@
 import fs from 'fs';
 import { db } from '../db.js';
+import { extractYouTubeId } from './youtube.js';
 
 class YouTubeMetadataUpdater {
   constructor() {
@@ -50,6 +51,78 @@ class YouTubeMetadataUpdater {
       return this.accessToken;
     } catch (err) {
       console.error('[YouTube Updater] Erro ao obter token do Google:', err.message);
+      return null;
+    }
+  }
+
+  /**
+   * Obtém o ID limpo de 11 caracteres ou detecta automaticamente a Live ativa no YouTube
+   */
+  async getActiveBroadcastId() {
+    const settings = db.getSettings();
+    const configuredId = settings.youtubeBroadcastVideoId?.trim();
+
+    if (configuredId) {
+      const cleanId = extractYouTubeId(configuredId) || configuredId;
+      if (cleanId && cleanId.length === 11) {
+        return cleanId;
+      }
+    }
+
+    // Se não tiver ID configurado ou for inválido, busca automaticamente na API do YouTube
+    const autoDetected = await this.detectAndSaveActiveBroadcast();
+    return autoDetected ? autoDetected.id : null;
+  }
+
+  /**
+   * Consulta a API oficial do YouTube para descobrir a transmissão ativa ou mais recente do canal
+   */
+  async detectAndSaveActiveBroadcast() {
+    const token = await this.getValidAccessToken();
+    if (!token) return null;
+
+    try {
+      console.log('[YouTube Updater] Detectando Live ativa automaticamente no canal...');
+
+      // 1. Tenta buscar transmissão em status 'active' (ao vivo agora)
+      let res = await fetch('https://www.googleapis.com/youtube/v3/liveBroadcasts?part=id,snippet,status&broadcastStatus=active', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      let data = await res.json();
+      let broadcast = data.items?.[0];
+
+      // 2. Se não encontrar ativa, busca a transmissão mais recente do canal (upcoming ou all)
+      if (!broadcast) {
+        res = await fetch('https://www.googleapis.com/youtube/v3/liveBroadcasts?part=id,snippet,status&broadcastStatus=all&maxResults=1', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        data = await res.json();
+        broadcast = data.items?.[0];
+      }
+
+      if (broadcast && broadcast.id) {
+        const liveId = broadcast.id;
+        const liveTitle = broadcast.snippet?.title || 'Live TV Braza';
+        const liveStatus = broadcast.status?.lifeCycleStatus || 'unknown';
+
+        console.log(`[YouTube Updater] 🔴 Live detectada automaticamente no canal: ${liveId} ("${liveTitle}", status: ${liveStatus})`);
+
+        // Salva automaticamente nas configurações
+        db.updateSettings({ youtubeBroadcastVideoId: liveId });
+
+        return {
+          id: liveId,
+          title: liveTitle,
+          status: liveStatus,
+          url: `https://www.youtube.com/watch?v=${liveId}`
+        };
+      } else {
+        console.warn('[YouTube Updater] Nenhuma transmissão ao vivo encontrada no canal.');
+        return null;
+      }
+    } catch (err) {
+      console.error('[YouTube Updater] Erro ao detectar live automaticamente:', err.message);
       return null;
     }
   }
@@ -167,8 +240,8 @@ class YouTubeMetadataUpdater {
   async syncItemMetadata(item) {
     if (!item) return;
 
-    const settings = db.getSettings();
-    const videoId = settings.youtubeBroadcastVideoId?.trim();
+    // Detecta automaticamente o ID da Live ativa no canal caso não esteja configurado
+    const videoId = await this.getActiveBroadcastId();
     const liveTitle = item.liveTitle || item.title;
 
     console.log(`[YouTube Updater] Sincronizando metadados da nova atração: "${liveTitle}"`);
@@ -180,7 +253,7 @@ class YouTubeMetadataUpdater {
     });
 
     if (!videoId) {
-      console.log('[YouTube Updater] ID do Vídeo da Live não configurado. O título foi atualizado no Painel TV Braza.');
+      console.log('[YouTube Updater] Nenhuma live ativa encontrada no YouTube. O título foi atualizado localmente no Painel TV Braza.');
       return;
     }
 

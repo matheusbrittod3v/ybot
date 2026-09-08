@@ -459,8 +459,14 @@
 
           <div class="form-group">
             <label for="cfg-broadcast-video-id">ID do Vídeo da Live ou URL da Live no YouTube:</label>
-            <input type="text" id="cfg-broadcast-video-id" placeholder="Ex: dQw4w9WgXcQ ou https://www.youtube.com/watch?v=..." />
-            <small>O ID da live que está transmitindo no seu canal (encontrado no link da transmissão).</small>
+            <div style="display: flex; gap: 8px;">
+              <input type="text" id="cfg-broadcast-video-id" placeholder="Ex: TMVDs7omS7w ou https://www.youtube.com/live/..." style="flex: 1;" />
+              <button type="button" class="btn-primary-braza" id="btn-detect-live" style="white-space: nowrap; padding: 6px 12px; font-size: 12px; display: flex; align-items: center; gap: 6px; background: linear-gradient(135deg, #ef4444, #dc2626);" title="Detecta automaticamente a live ativa transmitindo no seu canal do YouTube">
+                <span>🔴 Detectar Live Ativa</span>
+                <span class="spinner hidden" id="spinner-detect-live"></span>
+              </button>
+            </div>
+            <small>Detecta automaticamente via Google OAuth ou você pode colar o link da live.</small>
           </div>
 
           <div class="form-group">

@@ -123,6 +123,16 @@ server.listen(PORT, '0.0.0.0', () => {
       });
     }
   }
+
+  // Detecção automática da Live ativa no canal do YouTube
+  const currentSettings = db.getSettings();
+  if (currentSettings.googleRefreshToken) {
+    import('./utils/youtube-updater.js').then(({ youtubeUpdater }) => {
+      youtubeUpdater.getActiveBroadcastId().catch(err => {
+        console.warn('[Autostart] Não foi possível auto-detectar a live:', err.message);
+      });
+    });
+  }
 });
 
 // Finalização graciosa

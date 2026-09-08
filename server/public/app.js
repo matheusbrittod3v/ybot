@@ -90,6 +90,8 @@ const elCfgTitlePrefix = document.getElementById('cfg-title-prefix');
 const elCfgGoogleClientId = document.getElementById('cfg-google-client-id');
 const elCfgGoogleClientSecret = document.getElementById('cfg-google-client-secret');
 const elCfgGoogleRefreshToken = document.getElementById('cfg-google-refresh-token');
+const elBtnDetectLive = document.getElementById('btn-detect-live');
+const elSpinnerDetectLive = document.getElementById('spinner-detect-live');
 
 // Título da Live & Upload de Thumbnail no Preview
 const elCurrentLiveTitle = document.getElementById('current-live-title');
@@ -1137,6 +1139,32 @@ async function handleSaveSettings(e) {
   } catch (err) {
     showToast('Erro ao salvar configurações', 'error');
   }
+}
+
+// Botão de Detecção Automática da Live Ativa no YouTube
+if (elBtnDetectLive) {
+  elBtnDetectLive.addEventListener('click', async () => {
+    if (elSpinnerDetectLive) elSpinnerDetectLive.classList.remove('hidden');
+    elBtnDetectLive.disabled = true;
+    try {
+      showToast('Buscando transmissão ao vivo ativa no seu canal...', 'info');
+      const res = await fetch('/api/settings/detect-live', { method: 'POST' });
+      const data = await res.json();
+      if (data.success && data.broadcast) {
+        if (elCfgBroadcastVideoId) {
+          elCfgBroadcastVideoId.value = data.broadcast.id;
+        }
+        showToast(`Live detectada: "${data.broadcast.title}" (${data.broadcast.id})`, 'success');
+      } else {
+        showToast(data.error || 'Nenhuma live ativa encontrada no canal.', 'warning');
+      }
+    } catch (err) {
+      showToast('Erro ao detectar live: ' + err.message, 'error');
+    } finally {
+      if (elSpinnerDetectLive) elSpinnerDetectLive.classList.add('hidden');
+      elBtnDetectLive.disabled = false;
+    }
+  });
 }
 
 // ============================================================

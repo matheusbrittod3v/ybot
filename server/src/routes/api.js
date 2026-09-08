@@ -353,6 +353,26 @@ router.post('/settings', (req, res) => {
   res.json({ success: true, settings: updated });
 });
 
+// Detectar live ativa automaticamente no canal do YouTube
+router.post('/settings/detect-live', async (req, res) => {
+  try {
+    const broadcast = await youtubeUpdater.detectAndSaveActiveBroadcast();
+    if (broadcast && broadcast.id) {
+      return res.json({
+        success: true,
+        broadcast,
+        message: `Live detectada com sucesso: "${broadcast.title}" (${broadcast.id})`
+      });
+    }
+    return res.status(404).json({
+      success: false,
+      error: 'Nenhuma transmissão ao vivo ativa encontrada no canal tvbraza.'
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Histórico de transmissões
 router.get('/history', (req, res) => {
   res.json({ success: true, history: db.getHistory() });
