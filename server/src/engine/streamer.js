@@ -1,10 +1,30 @@
 import fs from 'fs';
 import path from 'path';
-import { spawn } from 'child_process';
+import { spawn, execFile } from 'child_process';
+import { promisify } from 'util';
+import { fileURLToPath } from 'url';
 import { db, DATA_DIR } from '../db.js';
 import { downloader } from './downloader.js';
 import { ensureStandbyVideo, getStandbyFilePath, standbyFileExists } from './standby.js';
 import { youtubeUpdater } from '../utils/youtube-updater.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const execFileAsync = promisify(execFile);
+const RESOLVER_SCRIPT = path.join(__dirname, '../utils/stream_resolver.py');
+
+async function resolveDirectStreams(url) {
+  try {
+    const { stdout } = await execFileAsync('python3', [RESOLVER_SCRIPT, url], { timeout: 15000 });
+    const data = JSON.parse(stdout.trim());
+    if (data.success && data.videoUrl) {
+      return data;
+    }
+  } catch (err) {
+    console.warn('[Streamer Direct] Erro no stream_resolver:', err.message);
+  }
+  return null;
+}
 
 class StreamerEngine {
   constructor() {
@@ -106,7 +126,7 @@ class StreamerEngine {
     }
   }
 
-  streamVideo(item) {
+  async streamVideo(item) {
     this.killProcess();
     this.currentMode = 'VIDEO';
     this.currentItem = item;
@@ -152,36 +172,66 @@ class StreamerEngine {
 
     if (isDirect) {
       console.log(`[Streamer] ⚡ Invocando motor de Stream Direto (sem anúncios / estilo Brave) para: ${item.url}`);
-      const ytdlpArgs = [
-        '--no-playlist',
-        '-f', 'b/best',
-        '--extractor-args', 'youtube:player_client=android,ios,web',
-        '--no-warnings',
-        '-o', '-'
-      ];
+      const streamData = await resolveDirectStreams(item.url);
 
-      if (settings.enableSponsorBlock !== false) {
-        ytdlpArgs.push('--sponsorblock-remove', 'sponsor,selfpromo');
-      }
-
-      const cookiesPath = path.join(DATA_DIR, 'cookies.txt');
-      if (fs.existsSync(cookiesPath) && fs.statSync(cookiesPath).size > 0) {
-        ytdlpArgs.push('--cookies', cookiesPath);
-      }
-
-      ytdlpArgs.push(item.url);
-
-      pipeSourceProc = spawn('yt-dlp', ytdlpArgs);
-      this.pipeProc = pipeSourceProc;
-
-      pipeSourceProc.stderr.on('data', (d) => {
-        const text = d.toString();
-        if (text.includes('ERROR:')) {
-          console.warn(`[Streamer Direct yt-dlp stderr] ${text.trim()}`);
+      if (streamData && streamData.videoUrl) {
+        console.log(`[Streamer Direct] Fluxos resolvidos via ${streamData.provider} (${streamData.resolution})! Iniciando broadcast...`);
+        if (streamData.audioUrl && !streamData.isProgressive) {
+          inputArgs = [
+            '-re',
+            '-reconnect', '1',
+            '-reconnect_streamed', '1',
+            '-reconnect_delay_max', '5',
+            '-i', streamData.videoUrl,
+            '-reconnect', '1',
+            '-reconnect_streamed', '1',
+            '-reconnect_delay_max', '5',
+            '-i', streamData.audioUrl,
+            '-map', '0:v:0',
+            '-map', '1:a:0'
+          ];
+        } else {
+          inputArgs = [
+            '-re',
+            '-reconnect', '1',
+            '-reconnect_streamed', '1',
+            '-reconnect_delay_max', '5',
+            '-i', streamData.videoUrl
+          ];
         }
-      });
+      } else {
+        console.warn('[Streamer Direct] Usando fallback secundário via yt-dlp android...');
+        const ytdlpArgs = [
+          '--no-playlist',
+          '-f', 'b/best',
+          '--extractor-args', 'youtube:player_client=android',
+          '--no-warnings',
+          '-o', '-'
+        ];
 
-      inputArgs = ['-re', '-i', 'pipe:0'];
+        if (settings.enableSponsorBlock !== false) {
+          ytdlpArgs.push('--sponsorblock-remove', 'sponsor,selfpromo');
+        }
+
+        const cookiesPath = path.join(DATA_DIR, 'cookies.txt');
+        if (fs.existsSync(cookiesPath) && fs.statSync(cookiesPath).size > 0) {
+          ytdlpArgs.push('--cookies', cookiesPath);
+        }
+
+        ytdlpArgs.push(item.url);
+
+        pipeSourceProc = spawn('yt-dlp', ytdlpArgs);
+        this.pipeProc = pipeSourceProc;
+
+        pipeSourceProc.stderr.on('data', (d) => {
+          const text = d.toString();
+          if (text.includes('ERROR:')) {
+            console.warn(`[Streamer Direct yt-dlp stderr] ${text.trim()}`);
+          }
+        });
+
+        inputArgs = ['-re', '-i', 'pipe:0'];
+      }
     } else {
       inputArgs = ['-re', '-i', item.filePath];
     }
