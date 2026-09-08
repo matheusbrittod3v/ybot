@@ -33,6 +33,9 @@ COPY server/ ./server/
 # Cria diretórios de dados persistentes com permissões completas
 RUN mkdir -p /app/data/media /app/data/thumbs && chmod -R 777 /app/data
 
+# Copia arquivo padrão de cookies para contornar verificações de bot
+COPY data/cookies.txt /app/data/cookies.txt
+
 # Variáveis de ambiente padrão
 ENV NODE_ENV=production
 ENV PORT=3000

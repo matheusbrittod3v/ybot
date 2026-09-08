@@ -7,6 +7,7 @@ import { db, DATA_DIR } from '../db.js';
 import { downloader } from './downloader.js';
 import { ensureStandbyVideo, getStandbyFilePath, standbyFileExists } from './standby.js';
 import { youtubeUpdater } from '../utils/youtube-updater.js';
+import { resolveDownloadUrl } from '../utils/web_downloader.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -14,15 +15,38 @@ const execFileAsync = promisify(execFile);
 const RESOLVER_SCRIPT = path.join(__dirname, '../utils/stream_resolver.py');
 
 async function resolveDirectStreams(url) {
+  // 1. Motor Primário Web Resolver (Instantâneo, zero verificação de bot, CDN direta)
   try {
-    const { stdout } = await execFileAsync('python3', [RESOLVER_SCRIPT, url], { timeout: 15000 });
+    console.log('[Streamer Direct] Resolvendo fluxo via Web Resolver (SaveTube)...');
+    const webData = await resolveDownloadUrl(url, ['720', '1080', '480', '360']);
+    if (webData && webData.downloadUrl) {
+      console.log(`[Streamer Direct] Fluxo Web resolvido em ${webData.quality}p com sucesso!`);
+      return {
+        success: true,
+        provider: `WebResolver_${webData.quality}p`,
+        videoUrl: webData.downloadUrl,
+        audioUrl: null,
+        isProgressive: true,
+        resolution: `${webData.quality}p`
+      };
+    }
+  } catch (err) {
+    console.warn('[Streamer Direct] Web Resolver indisponível:', err.message);
+  }
+
+  // 2. Motor Secundário via pytubefix (VISION_OS / WEB_SAFARI bypass)
+  try {
+    console.log('[Streamer Direct] Tentando resolução via stream_resolver (pytubefix)...');
+    const { stdout } = await execFileAsync('python3', [RESOLVER_SCRIPT, url], { timeout: 25000, input: '' });
     const data = JSON.parse(stdout.trim());
     if (data.success && data.videoUrl) {
+      console.log(`[Streamer Direct] Fluxo resolvido via ${data.provider} (${data.resolution})!`);
       return data;
     }
   } catch (err) {
-    console.warn('[Streamer Direct] Erro no stream_resolver:', err.message);
+    console.warn('[Streamer Direct] stream_resolver falhou:', err.message);
   }
+
   return null;
 }
 
