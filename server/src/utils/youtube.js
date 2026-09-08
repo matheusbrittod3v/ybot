@@ -1,8 +1,13 @@
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { DATA_DIR } from '../db.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const PYTUBE_INFO_SCRIPT = path.join(__dirname, 'pytube_info.py');
 
 const execFileAsync = promisify(execFile);
 
@@ -36,7 +41,29 @@ export async function fetchVideoInfo(url) {
     throw new Error('URL inválida do YouTube. Insira um link válido do YouTube.');
   }
 
-  // 1. Try with yt-dlp first if available
+  // 1. Tenta extrair com pytubefix (Bypass anti-bot nativo sem precisar de cookies)
+  try {
+    if (fs.existsSync(PYTUBE_INFO_SCRIPT)) {
+      const { stdout } = await execFileAsync('python3', [PYTUBE_INFO_SCRIPT, url], { timeout: 15000 });
+      const data = JSON.parse(stdout.trim());
+      if (data && data.title && !data.error) {
+        return {
+          videoId,
+          url,
+          title: data.title,
+          channel: data.channel || 'YouTube',
+          duration: data.duration || 0,
+          durationFormatted: formatDuration(data.duration || 0),
+          thumbnail: data.thumbnail || `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
+          views: data.views || null
+        };
+      }
+    }
+  } catch (pyErr) {
+    console.warn(`[YouTube] pytube_info falhou (${pyErr.message}). Tentando yt-dlp...`);
+  }
+
+  // 2. Fallback com yt-dlp
   try {
     const args = [
       '--dump-json',

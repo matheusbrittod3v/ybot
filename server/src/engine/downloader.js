@@ -1,11 +1,16 @@
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
 import { db, DATA_DIR, MEDIA_DIR } from '../db.js';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const PYTUBE_DOWNLOADER_SCRIPT = path.join(__dirname, '../utils/pytube_downloader.py');
+
 class DownloaderEngine {
   constructor() {
-    this.activeDownload = null; // { itemId, process, promise }
+    this.activeDownload = null; // { itemId, proc, promiseResolve }
     this.isChecking = false;
     this.listeners = new Set();
   }
@@ -101,7 +106,9 @@ class DownloaderEngine {
   }
 
   /**
-   * Baixa um item específico da fila usando yt-dlp
+   * Orquestra o download com prioridade para a biblioteca nativa pytubefix
+   * (que possui bypass anti-bot automático sem exigir upload de cookies)
+   * e fallback transparente para yt-dlp.
    */
   async downloadItem(item) {
     if (this.activeDownload) {
@@ -110,7 +117,6 @@ class DownloaderEngine {
     }
 
     const targetFile = this.getFilePath(item.id);
-    const tempPrefix = path.join(MEDIA_DIR, `temp_${item.id}`);
 
     db.updateQueueItem(item.id, {
       status: 'downloading',
@@ -119,8 +125,101 @@ class DownloaderEngine {
     });
     this.broadcast('download_start', { item: db.getQueueItem(item.id) });
 
+    // 1. Tenta baixar via biblioteca pytubefix (Bypass anti-bot sem precisar de cookies)
+    const pytubeResult = await this.downloadWithPytube(item, targetFile);
+    if (pytubeResult.success) {
+      return pytubeResult;
+    }
+
+    console.warn(`[Downloader] pytubefix não completou. Acionando motor de fallback (yt-dlp)...`);
+
+    // 2. Fallback via yt-dlp
+    return await this.downloadWithYtDlp(item, targetFile);
+  }
+
+  /**
+   * Download via biblioteca pytubefix com geração nativa de PO Token
+   */
+  downloadWithPytube(item, targetFile) {
     return new Promise((resolve) => {
-      // yt-dlp arguments com formato universal compatível com YouTube
+      if (!fs.existsSync(PYTUBE_DOWNLOADER_SCRIPT)) {
+        return resolve({ success: false, error: 'pytube_downloader.py não encontrado' });
+      }
+
+      console.log(`[Downloader] Executando biblioteca pytubefix para ${item.id} (${item.url})...`);
+      const proc = spawn('python3', [PYTUBE_DOWNLOADER_SCRIPT, item.url, targetFile]);
+
+      this.activeDownload = {
+        itemId: item.id,
+        proc,
+        promiseResolve: resolve
+      };
+
+      let lastProgressUpdate = 0;
+
+      proc.stdout.on('data', (chunk) => {
+        const text = chunk.toString();
+        const match = text.match(/\[PROGRESS\]\s+([\d.]+)%/);
+        if (match) {
+          const percent = Math.min(99.9, parseFloat(match[1]));
+          const now = Date.now();
+          if (now - lastProgressUpdate > 500) {
+            lastProgressUpdate = now;
+            db.updateQueueItem(item.id, {
+              downloadProgress: percent,
+              downloadSpeed: 'Baixando via lib...'
+            });
+            this.broadcast('download_progress', {
+              id: item.id,
+              progress: percent,
+              speed: 'pytubefix (sem cookies)',
+              eta: '',
+              totalSize: ''
+            });
+          }
+        }
+      });
+
+      proc.stderr.on('data', (chunk) => {
+        const errText = chunk.toString();
+        if (errText.includes('Erro') || errText.includes('Error')) {
+          console.warn(`[Downloader pytube stderr] ${errText.trim()}`);
+        }
+      });
+
+      proc.on('close', (code) => {
+        this.activeDownload = null;
+
+        if (code === 0 && fs.existsSync(targetFile) && fs.statSync(targetFile).size > 10240) {
+          const stats = fs.statSync(targetFile);
+          const updated = db.updateQueueItem(item.id, {
+            status: 'ready',
+            downloadProgress: 100,
+            downloadSpeed: 'Concluído',
+            filePath: targetFile,
+            fileSize: stats.size
+          });
+          console.log(`[Downloader] Download de "${item.title}" concluído com sucesso via lib (${(stats.size / 1024 / 1024).toFixed(1)} MB)!`);
+          this.broadcast('download_complete', { item: updated });
+          resolve({ success: true, item: updated });
+        } else {
+          resolve({ success: false, code });
+        }
+      });
+
+      proc.on('error', (err) => {
+        console.warn('[Downloader] Erro no processo pytube:', err.message);
+        this.activeDownload = null;
+        resolve({ success: false, error: err.message });
+      });
+    });
+  }
+
+  /**
+   * Fallback via yt-dlp
+   */
+  downloadWithYtDlp(item, targetFile) {
+    return new Promise((resolve) => {
       const args = [
         '--newline',
         '-f', 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best',
@@ -132,10 +231,8 @@ class DownloaderEngine {
 
       const cookiesPath = path.join(DATA_DIR, 'cookies.txt');
       if (fs.existsSync(cookiesPath) && fs.statSync(cookiesPath).size > 0) {
-        console.log(`[Downloader] Utilizando cookies.txt para autenticação anti-bot`);
+        console.log(`[Downloader] Utilizando cookies.txt para autenticação no yt-dlp`);
         args.push('--cookies', cookiesPath);
-      } else {
-        console.log(`[Downloader] Nenhum cookies.txt ativo. Usando modo anônimo.`);
       }
 
       args.push('-o', targetFile, item.url);
@@ -153,7 +250,6 @@ class DownloaderEngine {
 
       proc.stdout.on('data', (chunk) => {
         const text = chunk.toString();
-        // Exemplo: [download]  45.2% of  120.50MiB at  10.20MiB/s ETA 00:06
         const match = text.match(/\[download\]\s+([\d.]+)%\s+of\s+([~a-zA-Z0-9.]+)\s+at\s+([a-zA-Z0-9.\/]+)\s+ETA\s+([\d:]+)/);
         if (match) {
           const percent = parseFloat(match[1]);
@@ -189,7 +285,7 @@ class DownloaderEngine {
       proc.on('close', (code) => {
         this.activeDownload = null;
 
-        if (code === 0 && fs.existsSync(targetFile)) {
+        if (code === 0 && fs.existsSync(targetFile) && fs.statSync(targetFile).size > 10240) {
           const stats = fs.statSync(targetFile);
           const updated = db.updateQueueItem(item.id, {
             status: 'ready',
@@ -198,11 +294,11 @@ class DownloaderEngine {
             filePath: targetFile,
             fileSize: stats.size
           });
-          console.log(`[Downloader] Download de "${item.title}" concluído com sucesso (${(stats.size / 1024 / 1024).toFixed(1)} MB)!`);
+          console.log(`[Downloader] Download de "${item.title}" concluído via yt-dlp (${(stats.size / 1024 / 1024).toFixed(1)} MB)!`);
           this.broadcast('download_complete', { item: updated });
           resolve({ success: true, item: updated });
         } else {
-          console.error(`[Downloader] Falha no download do item ${item.id} (exit code ${code})`);
+          console.error(`[Downloader] Falha em todos os motores para o item ${item.id} (exit code ${code})`);
           const updated = db.updateQueueItem(item.id, {
             status: 'error',
             error: `Erro ao baixar vídeo (código ${code})`
@@ -213,11 +309,11 @@ class DownloaderEngine {
       });
 
       proc.on('error', (err) => {
-        console.error('[Downloader] Erro ao disparar processo yt-dlp:', err.message);
+        console.error('[Downloader] Erro ao disparar yt-dlp:', err.message);
         this.activeDownload = null;
         const updated = db.updateQueueItem(item.id, {
           status: 'error',
-          error: `yt-dlp não encontrado ou erro de execução: ${err.message}`
+          error: `Erro de execução no downloader: ${err.message}`
         });
         this.broadcast('download_error', { item: updated, error: err.message });
         resolve({ success: false, error: err.message });
