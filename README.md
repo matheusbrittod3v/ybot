@@ -4,13 +4,18 @@ Sistema de automação e transmissão contínua 24/7 para o canal **TV Braza** n
 
 ---
 
-## 🚀 Como Funciona a Economia Inteligente de Espaço
+## 🚀 Como Funciona a Economia de Espaço & Troca Automática de Título/Thumb
 
-> **Regra dos 2 Vídeos:** Para economizar espaço em disco na VPS:
-> 1. O sistema mantém apenas o **vídeo em reprodução no ar** (`atual.mp4`).
-> 2. Mantém o **próximo vídeo da grade pré-baixado** (`proximo.mp4`) para garantir que a transição ocorra de forma 100% instantânea e sem atrasos.
-> 3. Assim que um vídeo termina de ser transmitido (ou quando você clica em "Pular Vídeo"), o arquivo dele é **apagado imediatamente do disco**, liberando espaço para baixar a próxima atração.
-> 4. Se a fila de programação terminar, o sistema ativa uma **vinheta animada Standby da TV Braza em loop**, garantindo que a **live no YouTube NUNCA caia**.
+> **1. Regra dos 2 Vídeos:** Para economizar espaço em disco na VPS:
+> - O sistema mantém apenas o **vídeo em reprodução no ar** (`atual.mp4`).
+> - Mantém o **próximo vídeo da grade pré-baixado** (`proximo.mp4`) para transição instantânea e sem atrasos.
+> - Assim que um vídeo termina de ser transmitido (ou quando você clica em "Pular Vídeo"), o arquivo dele e sua thumbnail são **apagados imediatamente do disco**, liberando espaço para a próxima atração.
+> - Se a fila de programação terminar, o sistema ativa uma **vinheta animada Standby da TV Braza em loop**, garantindo que a **live no YouTube NUNCA caia**.
+>
+> **2. Título e Thumbnail Personalizados por Programa:**
+> - Você pode definir um **título específico para a Live** a cada programação adicionada.
+> - Pode fazer **upload de uma Thumbnail Personalizada** (arte exclusiva para aquela atração).
+> - Quando o programa entra no ar, o sistema **atualiza o título e a capa da Live no YouTube Studio automaticamente**!
 
 ---
 

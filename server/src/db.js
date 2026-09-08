@@ -14,10 +14,20 @@ const MEDIA_DIR = path.join(DATA_DIR, 'media');
 if (!fs.existsSync(MEDIA_DIR)) {
   fs.mkdirSync(MEDIA_DIR, { recursive: true });
 }
+const THUMBS_DIR = path.join(DATA_DIR, 'thumbs');
+if (!fs.existsSync(THUMBS_DIR)) {
+  fs.mkdirSync(THUMBS_DIR, { recursive: true });
+}
 
 const DEFAULT_SETTINGS = {
   youtubeStreamKey: process.env.YOUTUBE_STREAM_KEY || '',
   youtubeRtmpUrl: process.env.YOUTUBE_RTMP_URL || 'rtmp://a.rtmp.youtube.com/live2',
+  youtubeBroadcastVideoId: process.env.YOUTUBE_BROADCAST_VIDEO_ID || '',
+  googleClientId: process.env.GOOGLE_CLIENT_ID || '',
+  googleClientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
+  googleRefreshToken: process.env.GOOGLE_REFRESH_TOKEN || '',
+  autoUpdateYouTubeMetadata: true,
+  defaultLiveTitlePrefix: 'TV BRAZA AO VIVO: ',
   resolution: process.env.RESOLUTION || '1080p',
   fps: 30,
   videoBitrate: process.env.VIDEO_BITRATE || '4500k',
@@ -134,6 +144,12 @@ class Database {
         console.warn(`[DB] Não foi possível remover arquivo ${item.filePath}:`, err.message);
       }
     }
+    if (item && item.customThumbPath && fs.existsSync(item.customThumbPath)) {
+      try {
+        fs.unlinkSync(item.customThumbPath);
+        console.log(`[DB] Thumbnail customizada deletada: ${item.customThumbPath}`);
+      } catch (_) {}
+    }
     this.data.queue = this.data.queue.filter(i => i.id !== id);
     this.save();
   }
@@ -177,6 +193,15 @@ class Database {
         item.filePath = null;
       }
 
+      // Delete custom thumbnail immediately to keep VPS disk 100% clean!
+      if (item.customThumbPath && fs.existsSync(item.customThumbPath)) {
+        try {
+          fs.unlinkSync(item.customThumbPath);
+          console.log(`[Cleaner] Thumbnail customizada excluída para liberar disco: ${item.customThumbPath}`);
+        } catch (_) {}
+        item.customThumbPath = null;
+      }
+
       this.data.history.unshift(item);
       if (this.data.history.length > 50) {
         this.data.history.pop();
@@ -207,4 +232,4 @@ class Database {
 }
 
 export const db = new Database();
-export { DATA_DIR, MEDIA_DIR };
+export { DATA_DIR, MEDIA_DIR, THUMBS_DIR };

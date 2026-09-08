@@ -84,6 +84,34 @@ const elCfgAutoDelete = document.getElementById('cfg-auto-delete');
 const elCfgAutoStandby = document.getElementById('cfg-auto-standby');
 const elBtnToggleKeyEye = document.getElementById('btn-toggle-key-eye');
 
+// YouTube Live Metadata Settings
+const elCfgBroadcastVideoId = document.getElementById('cfg-broadcast-video-id');
+const elCfgTitlePrefix = document.getElementById('cfg-title-prefix');
+const elCfgGoogleClientId = document.getElementById('cfg-google-client-id');
+const elCfgGoogleClientSecret = document.getElementById('cfg-google-client-secret');
+const elCfgGoogleRefreshToken = document.getElementById('cfg-google-refresh-token');
+
+// Título da Live & Upload de Thumbnail no Preview
+const elCurrentLiveTitle = document.getElementById('current-live-title');
+const elInputLiveTitle = document.getElementById('input-live-title');
+const elInputCustomThumb = document.getElementById('input-custom-thumb');
+const elPreviewCustomThumbBadge = document.getElementById('preview-custom-thumb-badge');
+const elBtnRemoveCustomThumb = document.getElementById('btn-remove-custom-thumb');
+
+// Modal de Edição de Item da Grade
+const elModalEditItem = document.getElementById('modal-edit-item');
+const elFormEditItem = document.getElementById('form-edit-item');
+const elEditItemId = document.getElementById('edit-item-id');
+const elEditLiveTitle = document.getElementById('edit-live-title');
+const elEditThumbImg = document.getElementById('edit-thumb-img');
+const elEditInputCustomThumb = document.getElementById('edit-input-custom-thumb');
+const elEditBtnRestoreThumb = document.getElementById('edit-btn-restore-thumb');
+const elBtnCloseEditItem = document.getElementById('btn-close-edit-item');
+const elBtnCancelEditItem = document.getElementById('btn-cancel-edit-item');
+let editingItemOriginalThumb = '';
+let editingItemCustomThumbPath = null;
+let editingItemCustomThumbUrl = null;
+
 const elDrawerLogs = document.getElementById('drawer-logs');
 const elBtnOpenLogs = document.getElementById('btn-open-logs');
 const elBtnCloseLogs = document.getElementById('btn-close-logs');
@@ -315,8 +343,12 @@ async function fetchStatus() {
       if (data.activeItem) {
         elCurrentTitle.textContent = data.activeItem.title;
         elCurrentChannel.textContent = `Canal: ${data.activeItem.channel || 'TV Braza'}`;
-        if (data.activeItem.thumbnail) {
-          elCurrentThumb.src = data.activeItem.thumbnail;
+        const activeLiveTitle = data.playout?.currentLiveTitle || data.activeItem.liveTitle || data.activeItem.title;
+        if (elCurrentLiveTitle) elCurrentLiveTitle.textContent = activeLiveTitle;
+        
+        const activeThumb = data.activeItem.customThumbUrl || data.activeItem.thumbnail;
+        if (activeThumb) {
+          elCurrentThumb.src = activeThumb;
           elCurrentThumb.classList.remove('hidden');
           elStandbyDisplay.classList.add('hidden');
         }
@@ -325,6 +357,7 @@ async function fetchStatus() {
       } else {
         elCurrentTitle.textContent = 'TV Braza - Transmissão Contínua 24h';
         elCurrentChannel.textContent = 'Aguardando próxima atração';
+        if (elCurrentLiveTitle) elCurrentLiveTitle.textContent = 'TV BRAZA - AO VIVO 24H';
         elCurrentThumb.classList.add('hidden');
         elStandbyDisplay.classList.remove('hidden');
         playoutStartTime = null;
@@ -336,12 +369,12 @@ async function fetchStatus() {
 
       // Atualiza A Seguir
       if (data.nextItem) {
-        elNextThumb.src = data.nextItem.thumbnail || '';
+        elNextThumb.src = data.nextItem.customThumbUrl || data.nextItem.thumbnail || '';
         elNextThumb.classList.remove('hidden');
         elNextEmptyState.classList.add('hidden');
         elNextInfoBox.classList.remove('hidden');
 
-        elNextTitle.textContent = data.nextItem.title;
+        elNextTitle.textContent = data.nextItem.liveTitle || data.nextItem.title;
         elNextChannel.textContent = `Canal: ${data.nextItem.channel || 'Desconhecido'}`;
         elNextDuration.textContent = data.nextItem.durationFormatted || '00:00';
 
@@ -418,11 +451,20 @@ function renderQueue(queue) {
       statusText = `Baixando ${item.downloadProgress || 0}%`;
     }
 
+    const thumbSrc = item.customThumbUrl || item.thumbnail || 'assets/logo.svg';
+    const displayTitle = item.liveTitle || item.title;
+    const hasCustomThumb = Boolean(item.customThumbUrl);
+
     row.innerHTML = `
       <div class="queue-order">${index + 1}</div>
-      <img src="${item.thumbnail || 'assets/logo.svg'}" class="queue-thumb" alt="Thumb">
+      <div style="position: relative; width: 96px; aspect-ratio: 16/9;">
+        <img src="${thumbSrc}" class="queue-thumb" style="width: 100%; height: 100%;" alt="Thumb">
+        ${hasCustomThumb ? '<span class="custom-thumb-indicator">CUSTOM</span>' : ''}
+      </div>
       <div class="queue-info">
-        <div class="queue-item-title" title="${escapeHtml(item.title)}">${escapeHtml(item.title)}</div>
+        <div class="queue-item-title" title="${escapeHtml(displayTitle)}">
+          ${escapeHtml(displayTitle)}
+        </div>
         <div class="queue-item-meta">
           <span>Canal: ${escapeHtml(item.channel || 'YouTube')}</span>
           <span>Duração: <strong>${item.durationFormatted || '00:00'}</strong></span>
@@ -430,6 +472,7 @@ function renderQueue(queue) {
         </div>
       </div>
       <div class="queue-actions">
+        <button class="btn-queue-edit" onclick="openEditItemModal('${item.id}')" title="Editar Título e Capa da Live">✏️</button>
         ${!isPlaying && index > 0 ? `
           <button class="btn-queue-move" onclick="moveQueueItem('${item.id}', -1)" title="Subir na fila">▲</button>
         ` : ''}
@@ -586,12 +629,98 @@ function setupEventListeners() {
 
   elFormSettings.addEventListener('submit', handleSaveSettings);
 
+  // Upload de Thumbnail Personalizada no Preview de Adição
+  if (elInputCustomThumb) {
+    elInputCustomThumb.addEventListener('change', async (e) => {
+      const file = e.target.files?.[0];
+      if (!file || !pendingVideoPreview) return;
+
+      try {
+        showToast('Enviando thumbnail personalizada...', 'info');
+        const uploadRes = await uploadThumbFile(file);
+        if (uploadRes.success) {
+          pendingVideoPreview.customThumbPath = uploadRes.thumbPath;
+          pendingVideoPreview.customThumbUrl = uploadRes.thumbUrl;
+          elPreviewCardThumb.src = uploadRes.thumbUrl;
+          elPreviewCustomThumbBadge.classList.remove('hidden');
+          elBtnRemoveCustomThumb.classList.remove('hidden');
+          showToast('Thumbnail personalizada aplicada!', 'success');
+        } else {
+          showToast(uploadRes.error || 'Erro no upload da imagem', 'error');
+        }
+      } catch (err) {
+        showToast('Falha no upload da thumbnail', 'error');
+      }
+    });
+  }
+
+  if (elBtnRemoveCustomThumb) {
+    elBtnRemoveCustomThumb.addEventListener('click', () => {
+      if (!pendingVideoPreview) return;
+      pendingVideoPreview.customThumbPath = null;
+      pendingVideoPreview.customThumbUrl = null;
+      elPreviewCardThumb.src = pendingVideoPreview.thumbnail;
+      elPreviewCustomThumbBadge.classList.add('hidden');
+      elBtnRemoveCustomThumb.classList.add('hidden');
+      if (elInputCustomThumb) elInputCustomThumb.value = '';
+      showToast('Capa original restaurada.', 'info');
+    });
+  }
+
+  // Eventos do Modal de Edição de Item
+  if (elBtnCloseEditItem) {
+    elBtnCloseEditItem.addEventListener('click', () => elModalEditItem.classList.add('hidden'));
+  }
+  if (elBtnCancelEditItem) {
+    elBtnCancelEditItem.addEventListener('click', () => elModalEditItem.classList.add('hidden'));
+  }
+  if (elFormEditItem) {
+    elFormEditItem.addEventListener('submit', handleSaveEditedItem);
+  }
+  if (elEditInputCustomThumb) {
+    elEditInputCustomThumb.addEventListener('change', async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      try {
+        showToast('Enviando nova thumbnail...', 'info');
+        const res = await uploadThumbFile(file);
+        if (res.success) {
+          editingItemCustomThumbPath = res.thumbPath;
+          editingItemCustomThumbUrl = res.thumbUrl;
+          elEditThumbImg.src = res.thumbUrl;
+          showToast('Thumbnail atualizada no preview!', 'success');
+        }
+      } catch (err) {
+        showToast('Erro ao enviar imagem', 'error');
+      }
+    });
+  }
+  if (elEditBtnRestoreThumb) {
+    elEditBtnRestoreThumb.addEventListener('click', () => {
+      editingItemCustomThumbPath = null;
+      editingItemCustomThumbUrl = null;
+      elEditThumbImg.src = editingItemOriginalThumb;
+      if (elEditInputCustomThumb) elEditInputCustomThumb.value = '';
+      showToast('Capa original restaurada.', 'info');
+    });
+  }
+
   // Drawer de logs
   elBtnOpenLogs.addEventListener('click', () => elDrawerLogs.classList.remove('hidden'));
   elBtnCloseLogs.addEventListener('click', () => elDrawerLogs.classList.add('hidden'));
   elBtnClearTerminal.addEventListener('click', () => {
     elTerminalBody.innerHTML = '';
   });
+}
+
+async function uploadThumbFile(file) {
+  const formData = new FormData();
+  formData.append('thumbnail', file);
+  const res = await fetch('/api/upload-thumb', {
+    method: 'POST',
+    body: formData
+  });
+  return await res.json();
 }
 
 async function handleInspectUrl() {
@@ -613,11 +742,25 @@ async function handleInspectUrl() {
     const data = await res.json();
 
     if (data.success && data.info) {
-      pendingVideoPreview = data.info;
+      pendingVideoPreview = {
+        ...data.info,
+        customThumbPath: null,
+        customThumbUrl: null
+      };
+
       elPreviewCardThumb.src = data.info.thumbnail;
       elPreviewCardTitle.textContent = data.info.title;
       elPreviewCardChannel.textContent = `Canal: ${data.info.channel}`;
       elPreviewCardDuration.textContent = `Duração: ${data.info.durationFormatted}`;
+      
+      // Preenche o campo de título da Live
+      if (elInputLiveTitle) {
+        elInputLiveTitle.value = data.info.suggestedLiveTitle || data.info.title;
+      }
+      if (elPreviewCustomThumbBadge) elPreviewCustomThumbBadge.classList.add('hidden');
+      if (elBtnRemoveCustomThumb) elBtnRemoveCustomThumb.classList.add('hidden');
+      if (elInputCustomThumb) elInputCustomThumb.value = '';
+
       elUrlPreviewCard.classList.remove('hidden');
     } else {
       showToast(data.error || 'Não foi possível obter dados do vídeo', 'error');
@@ -633,16 +776,21 @@ async function handleInspectUrl() {
 async function handleConfirmAdd() {
   if (!pendingVideoPreview) return;
 
+  const payload = {
+    ...pendingVideoPreview,
+    liveTitle: elInputLiveTitle ? elInputLiveTitle.value.trim() : pendingVideoPreview.title
+  };
+
   try {
     const res = await fetch('/api/queue/add', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(pendingVideoPreview)
+      body: JSON.stringify(payload)
     });
     const data = await res.json();
 
     if (data.success) {
-      showToast(`"${data.item.title}" adicionado à grade!`, 'success');
+      showToast(`"${data.item.liveTitle || data.item.title}" adicionado à grade!`, 'success');
       elInputYtUrl.value = '';
       elUrlPreviewCard.classList.add('hidden');
       pendingVideoPreview = null;
@@ -653,6 +801,52 @@ async function handleConfirmAdd() {
     }
   } catch (err) {
     showToast('Erro ao salvar vídeo na grade', 'error');
+  }
+}
+
+window.openEditItemModal = function(id) {
+  const item = currentQueue.find(i => i.id === id);
+  if (!item) return;
+
+  elEditItemId.value = item.id;
+  elEditLiveTitle.value = item.liveTitle || item.title;
+  editingItemOriginalThumb = item.thumbnail || 'assets/logo.svg';
+  editingItemCustomThumbPath = item.customThumbPath || null;
+  editingItemCustomThumbUrl = item.customThumbUrl || null;
+  elEditThumbImg.src = item.customThumbUrl || item.thumbnail || 'assets/logo.svg';
+  if (elEditInputCustomThumb) elEditInputCustomThumb.value = '';
+
+  elModalEditItem.classList.remove('hidden');
+};
+
+async function handleSaveEditedItem(e) {
+  e.preventDefault();
+  const id = elEditItemId.value;
+  if (!id) return;
+
+  const updates = {
+    liveTitle: elEditLiveTitle.value.trim(),
+    customThumbPath: editingItemCustomThumbPath,
+    customThumbUrl: editingItemCustomThumbUrl
+  };
+
+  try {
+    const res = await fetch(`/api/queue/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates)
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast('Programação atualizada com sucesso!', 'success');
+      elModalEditItem.classList.add('hidden');
+      fetchQueue();
+      fetchStatus();
+    } else {
+      showToast(data.error || 'Erro ao atualizar programação', 'error');
+    }
+  } catch (err) {
+    showToast('Erro ao salvar edição', 'error');
   }
 }
 
@@ -708,6 +902,14 @@ async function openSettingsModal() {
       elCfgWatermark.checked = s.enableWatermark !== false;
       elCfgAutoDelete.checked = s.autoDeleteFinished !== false;
       elCfgAutoStandby.checked = s.autoLoopStandby !== false;
+
+      // Configurações do YouTube Live Metadata
+      if (elCfgBroadcastVideoId) elCfgBroadcastVideoId.value = s.youtubeBroadcastVideoId || '';
+      if (elCfgTitlePrefix) elCfgTitlePrefix.value = s.defaultLiveTitlePrefix || '';
+      if (elCfgGoogleClientId) elCfgGoogleClientId.value = s.googleClientId || '';
+      if (elCfgGoogleClientSecret) elCfgGoogleClientSecret.value = s.googleClientSecret || '';
+      if (elCfgGoogleRefreshToken) elCfgGoogleRefreshToken.value = s.googleRefreshToken || '';
+
       elModalSettings.classList.remove('hidden');
     }
   } catch (err) {
@@ -724,7 +926,12 @@ async function handleSaveSettings(e) {
     videoBitrate: elCfgBitrate.value,
     enableWatermark: elCfgWatermark.checked,
     autoDeleteFinished: elCfgAutoDelete.checked,
-    autoLoopStandby: elCfgAutoStandby.checked
+    autoLoopStandby: elCfgAutoStandby.checked,
+    youtubeBroadcastVideoId: elCfgBroadcastVideoId ? elCfgBroadcastVideoId.value.trim() : '',
+    defaultLiveTitlePrefix: elCfgTitlePrefix ? elCfgTitlePrefix.value : '',
+    googleClientId: elCfgGoogleClientId ? elCfgGoogleClientId.value.trim() : '',
+    googleClientSecret: elCfgGoogleClientSecret ? elCfgGoogleClientSecret.value.trim() : '',
+    googleRefreshToken: elCfgGoogleRefreshToken ? elCfgGoogleRefreshToken.value.trim() : ''
   };
 
   try {

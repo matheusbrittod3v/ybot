@@ -4,4 +4,7 @@ npm-debug.log
 .DS_Store
 data/media/*.mp4
 data/media/*.part
+data/thumbs/*.jpg
+data/thumbs/*.png
+data/thumbs/*.webp
 data/db.json.tmp

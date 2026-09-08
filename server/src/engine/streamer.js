@@ -4,6 +4,7 @@ import { spawn } from 'child_process';
 import { db } from '../db.js';
 import { downloader } from './downloader.js';
 import { ensureStandbyVideo, getStandbyFilePath, standbyFileExists } from './standby.js';
+import { youtubeUpdater } from '../utils/youtube-updater.js';
 
 class StreamerEngine {
   constructor() {
@@ -121,6 +122,11 @@ class StreamerEngine {
     });
 
     this.broadcast('video_started', { item });
+
+    // Atualiza automaticamente o título da Live e a Thumbnail no YouTube Studio
+    youtubeUpdater.syncItemMetadata(item).catch(err => {
+      console.warn('[Streamer] Erro ao sincronizar metadados no YouTube:', err.message);
+    });
 
     // Pede ao Downloader para já ir baixando o PRÓXIMO vídeo da fila antecipadamente!
     downloader.checkQueue(item.id);

@@ -9,7 +9,7 @@ import apiRouter from './routes/api.js';
 import { streamer } from './engine/streamer.js';
 import { downloader } from './engine/downloader.js';
 import { getSystemStats } from './utils/system.js';
-import { db } from './db.js';
+import { db, THUMBS_DIR } from './db.js';
 
 dotenv.config();
 
@@ -25,6 +25,7 @@ const PORT = parseInt(process.env.PORT || '3000', 10);
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../public')));
+app.use('/thumbs', express.static(THUMBS_DIR));
 
 // API Routes
 app.use('/api', apiRouter);

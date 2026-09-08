@@ -119,6 +119,10 @@
           <div class="now-playing-info">
             <h3 class="video-title" id="current-title">Aguardando início...</h3>
             <p class="video-channel" id="current-channel">Canal: TV Braza</p>
+            <div class="current-live-meta">
+              <span class="live-meta-badge">TÍTULO NO YOUTUBE:</span>
+              <span class="live-meta-text" id="current-live-title">TV BRAZA - AO VIVO 24H</span>
+            </div>
 
             <!-- Progress Bar -->
             <div class="progress-section">
@@ -249,15 +253,55 @@
 
       <!-- Preview do Vídeo Consultado antes de Confirmar -->
       <div class="url-preview-card hidden" id="url-preview-card">
-        <img src="" alt="Thumbnail" class="url-preview-thumb" id="preview-card-thumb">
-        <div class="url-preview-details">
-          <h4 id="preview-card-title">Título do vídeo</h4>
-          <p id="preview-card-channel">Canal: --</p>
-          <div class="preview-meta-row">
-            <span class="preview-chip" id="preview-card-duration">Duração: 00:00</span>
-            <span class="preview-chip status-ready">Pronto para Enfileirar</span>
+        <div class="url-preview-top">
+          <div class="url-preview-thumb-wrapper">
+            <img src="" alt="Thumbnail" class="url-preview-thumb" id="preview-card-thumb">
+            <span class="custom-thumb-indicator hidden" id="preview-custom-thumb-badge">THUMB PERSONALIZADA</span>
+          </div>
+          <div class="url-preview-details">
+            <h4 id="preview-card-title">Título do vídeo</h4>
+            <p id="preview-card-channel">Canal: --</p>
+            <div class="preview-meta-row">
+              <span class="preview-chip" id="preview-card-duration">Duração: 00:00</span>
+              <span class="preview-chip status-ready">Pronto para Enfileirar</span>
+            </div>
           </div>
         </div>
+
+        <!-- Campos de Título da Live e Upload de Thumbnail -->
+        <div class="url-preview-custom-section">
+          <div class="form-group">
+            <label for="input-live-title">
+              <strong>Título da Live no YouTube</strong> (atualizado quando este vídeo começar):
+            </label>
+            <input 
+              type="text" 
+              id="input-live-title" 
+              maxlength="100" 
+              placeholder="Ex: TV BRAZA AO VIVO: Super Entrevista Exclusiva"
+            />
+            <small>O sistema enviará esse título automaticamente para a Live do YouTube assim que o programa for ao ar.</small>
+          </div>
+
+          <div class="thumb-upload-box">
+            <div class="thumb-upload-actions">
+              <label class="btn-upload-file">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                  <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                  <polyline points="21 15 16 10 5 21"></polyline>
+                </svg>
+                <span>Upar Thumbnail Personalizada (.jpg, .png)</span>
+                <input type="file" id="input-custom-thumb" accept="image/jpeg,image/png,image/webp" style="display:none">
+              </label>
+              <button type="button" class="btn-small-subtle hidden" id="btn-remove-custom-thumb">Restaurar Capa Padrão</button>
+            </div>
+            <div class="thumb-upload-tip">
+              💡 Você pode enviar sua própria arte de thumbnail ou manter a capa original do YouTube.
+            </div>
+          </div>
+        </div>
+
         <div class="url-preview-actions">
           <button class="btn-primary-braza" id="btn-confirm-add">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -403,9 +447,93 @@
             </label>
           </div>
 
+          <!-- Seção de Troca Automática de Título e Thumbnail no YouTube -->
+          <div class="settings-divider">
+            <h4>SINCRONIZAÇÃO AUTOMÁTICA DE TÍTULO E THUMB NO YOUTUBE STUDIO</h4>
+            <small>Permite que o sistema altere o título e a capa da sua Live do YouTube automaticamente a cada novo programa.</small>
+          </div>
+
+          <div class="form-group">
+            <label for="cfg-broadcast-video-id">ID do Vídeo da Live ou URL da Live no YouTube:</label>
+            <input type="text" id="cfg-broadcast-video-id" placeholder="Ex: dQw4w9WgXcQ ou https://www.youtube.com/watch?v=..." />
+            <small>O ID da live que está transmitindo no seu canal (encontrado no link da transmissão).</small>
+          </div>
+
+          <div class="form-group">
+            <label for="cfg-title-prefix">Prefixo Padrão para o Título da Live:</label>
+            <input type="text" id="cfg-title-prefix" placeholder="Ex: TV BRAZA AO VIVO: " />
+          </div>
+
+          <div class="settings-collapsible">
+            <details>
+              <summary>🔑 Credenciais Google Cloud / YouTube Data API (Opcional para envio automático)</summary>
+              <div class="collapsible-content">
+                <div class="form-group">
+                  <label for="cfg-google-client-id">Google Client ID:</label>
+                  <input type="text" id="cfg-google-client-id" placeholder="xxxx.apps.googleusercontent.com" />
+                </div>
+                <div class="form-group">
+                  <label for="cfg-google-client-secret">Google Client Secret:</label>
+                  <input type="password" id="cfg-google-client-secret" placeholder="GOCSPX-xxxx" />
+                </div>
+                <div class="form-group">
+                  <label for="cfg-google-refresh-token">Google Refresh Token (OAuth2):</label>
+                  <input type="password" id="cfg-google-refresh-token" placeholder="1//04xxxx" />
+                  <small>Permite que a VPS atualize título e envie thumbnail sem expirar sessão.</small>
+                </div>
+              </div>
+            </details>
+          </div>
+
           <div class="modal-footer">
             <button type="submit" class="btn-primary-braza">Salvar Configurações</button>
             <button type="button" class="btn-cancel" id="btn-cancel-settings">Fechar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Editar Programação da Grade (Título da Live e Thumbnail) -->
+  <div class="modal-backdrop hidden" id="modal-edit-item">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="card-title-group">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2">
+            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+          </svg>
+          <h3>EDITAR PROGRAMAÇÃO (TÍTULO E THUMB DA LIVE)</h3>
+        </div>
+        <button class="btn-modal-close" id="btn-close-edit-item">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="form-edit-item">
+          <input type="hidden" id="edit-item-id">
+          
+          <div class="form-group">
+            <label for="edit-live-title">Título que aparecerá na Live do YouTube:</label>
+            <input type="text" id="edit-live-title" maxlength="100" required>
+            <small>Limite de 100 caracteres do YouTube.</small>
+          </div>
+
+          <div class="form-group">
+            <label>Thumbnail da Live:</label>
+            <div class="edit-thumb-wrapper">
+              <img src="" id="edit-thumb-img" alt="Thumbnail Preview" class="edit-thumb-preview">
+              <div class="edit-thumb-actions">
+                <label class="btn-upload-file">
+                  <span>Trocar Thumbnail (.jpg, .png)</span>
+                  <input type="file" id="edit-input-custom-thumb" accept="image/jpeg,image/png,image/webp" style="display:none">
+                </label>
+                <button type="button" class="btn-small-subtle" id="edit-btn-restore-thumb">Usar Capa Original do Vídeo</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="modal-footer">
+            <button type="submit" class="btn-primary-braza">Salvar Alterações</button>
+            <button type="button" class="btn-cancel" id="btn-cancel-edit-item">Cancelar</button>
           </div>
         </form>
       </div>

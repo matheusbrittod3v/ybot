@@ -1,12 +1,40 @@
 import express from 'express';
 import crypto from 'crypto';
-import { db } from '../db.js';
+import path from 'path';
+import fs from 'fs';
+import multer from 'multer';
+import { db, THUMBS_DIR } from '../db.js';
 import { streamer } from '../engine/streamer.js';
 import { downloader } from '../engine/downloader.js';
 import { fetchVideoInfo } from '../utils/youtube.js';
 import { getSystemStats } from '../utils/system.js';
+import { youtubeUpdater } from '../utils/youtube-updater.js';
 
 const router = express.Router();
+
+// Configuração do Multer para upload de thumbnails personalizadas
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, THUMBS_DIR);
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase() || '.jpg';
+    const filename = `thumb_${Date.now()}_${crypto.randomUUID().slice(0, 8)}${ext}`;
+    cb(null, filename);
+  }
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB máximo
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Apenas arquivos de imagem são permitidos (JPG, PNG, WebP)'));
+    }
+  }
+});
 
 // Status completo do sistema
 router.get('/status', (req, res) => {
@@ -47,6 +75,24 @@ router.get('/queue', (req, res) => {
   res.json({ success: true, queue });
 });
 
+// Upload de Thumbnail Personalizada
+router.post('/upload-thumb', upload.single('thumbnail'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ success: false, error: 'Nenhum arquivo de imagem enviado' });
+  }
+
+  const thumbUrl = `/thumbs/${req.file.filename}`;
+  const thumbPath = req.file.path;
+
+  res.json({
+    success: true,
+    thumbUrl,
+    thumbPath,
+    filename: req.file.filename,
+    size: req.file.size
+  });
+});
+
 // Prévia de link do YouTube antes de adicionar
 router.post('/queue/preview', async (req, res) => {
   const { url } = req.body;
@@ -56,15 +102,35 @@ router.post('/queue/preview', async (req, res) => {
 
   try {
     const info = await fetchVideoInfo(url);
-    res.json({ success: true, info });
+    const settings = db.getSettings();
+    const suggestedLiveTitle = `${settings.defaultLiveTitlePrefix || ''}${info.title}`.substring(0, 100);
+
+    res.json({
+      success: true,
+      info: {
+        ...info,
+        suggestedLiveTitle
+      }
+    });
   } catch (err) {
     res.status(400).json({ success: false, error: err.message });
   }
 });
 
-// Adicionar vídeo à fila
+// Adicionar vídeo à fila com Título e Thumbnail Personalizada
 router.post('/queue/add', async (req, res) => {
-  const { url, title, duration, durationFormatted, thumbnail, channel } = req.body;
+  const {
+    url,
+    title,
+    duration,
+    durationFormatted,
+    thumbnail,
+    channel,
+    liveTitle,
+    customThumbPath,
+    customThumbUrl
+  } = req.body;
+
   if (!url) {
     return res.status(400).json({ success: false, error: 'URL do vídeo é obrigatória' });
   }
@@ -90,10 +156,16 @@ router.post('/queue/add', async (req, res) => {
       };
     }
 
+    const settings = db.getSettings();
+    const finalLiveTitle = (liveTitle || `${settings.defaultLiveTitlePrefix || ''}${videoData.title}`).substring(0, 100);
+
     const newItem = db.addToQueue({
       id: crypto.randomUUID(),
       url,
       ...videoData,
+      liveTitle: finalLiveTitle,
+      customThumbPath: customThumbPath || null,
+      customThumbUrl: customThumbUrl || null,
       status: 'queued'
     });
 
@@ -111,6 +183,33 @@ router.post('/queue/add', async (req, res) => {
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
+});
+
+// Atualizar dados de um item da fila (Título da Live ou Thumbnail)
+router.put('/queue/:id', async (req, res) => {
+  const { id } = req.params;
+  const { liveTitle, customThumbPath, customThumbUrl } = req.body;
+
+  const item = db.getQueueItem(id);
+  if (!item) {
+    return res.status(404).json({ success: false, error: 'Item não encontrado na fila' });
+  }
+
+  const updates = {};
+  if (liveTitle !== undefined) updates.liveTitle = liveTitle.substring(0, 100);
+  if (customThumbPath !== undefined) updates.customThumbPath = customThumbPath;
+  if (customThumbUrl !== undefined) updates.customThumbUrl = customThumbUrl;
+
+  const updatedItem = db.updateQueueItem(id, updates);
+
+  // Se o item estiver NO AR AGORA, sincroniza com o YouTube imediatamente!
+  if (updatedItem.status === 'playing') {
+    youtubeUpdater.syncItemMetadata(updatedItem).catch(err => {
+      console.warn('[API] Erro ao sincronizar metadados atualizados:', err.message);
+    });
+  }
+
+  res.json({ success: true, item: updatedItem });
 });
 
 // Remover item da fila
