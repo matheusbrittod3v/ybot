@@ -73,19 +73,21 @@ class DownloaderEngine {
       const currentItem = queue[currentIdx];
       const nextItem = queue.slice(currentIdx + 1).find(i => i.status !== 'finished');
 
-      // 1. Se o vídeo atual não estiver baixado ou com arquivo ausente, baixa ele primeiro!
-      const currentFilePath = this.getFilePath(currentItem.id);
-      const currentHasFile = fs.existsSync(currentFilePath) && fs.statSync(currentFilePath).size > 10240;
+      // 1. Se o vídeo atual for de download em disco e não estiver baixado, baixa ele primeiro!
+      if (currentItem && currentItem.streamMode !== 'direct') {
+        const currentFilePath = this.getFilePath(currentItem.id);
+        const currentHasFile = fs.existsSync(currentFilePath) && fs.statSync(currentFilePath).size > 10240;
 
-      if (!currentHasFile && currentItem.status !== 'downloading') {
-        console.log(`[Downloader] Prioridade: Baixando vídeo atual da programação (${currentItem.title})`);
-        await this.downloadItem(currentItem);
-        this.isChecking = false;
-        return;
+        if (!currentHasFile && currentItem.status !== 'downloading') {
+          console.log(`[Downloader] Prioridade: Baixando vídeo atual da programação (${currentItem.title})`);
+          await this.downloadItem(currentItem);
+          this.isChecking = false;
+          return;
+        }
       }
 
-      // 2. Se o vídeo atual já está pronto/baixado, baixa antecipadamente o PRÓXIMO da fila!
-      if (nextItem) {
+      // 2. Se o vídeo atual já está pronto/baixado (ou é stream direto), baixa antecipadamente o PRÓXIMO da fila se for modo download!
+      if (nextItem && nextItem.streamMode !== 'direct') {
         const nextFilePath = this.getFilePath(nextItem.id);
         const nextHasFile = fs.existsSync(nextFilePath) && fs.statSync(nextFilePath).size > 10240;
 

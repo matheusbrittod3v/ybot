@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { spawn } from 'child_process';
-import { db } from '../db.js';
+import { db, DATA_DIR } from '../db.js';
 import { downloader } from './downloader.js';
 import { ensureStandbyVideo, getStandbyFilePath, standbyFileExists } from './standby.js';
 import { youtubeUpdater } from '../utils/youtube-updater.js';
@@ -9,6 +9,7 @@ import { youtubeUpdater } from '../utils/youtube-updater.js';
 class StreamerEngine {
   constructor() {
     this.ffmpegProc = null;
+    this.pipeProc = null;
     this.currentMode = 'STOPPED'; // 'STOPPED', 'STANDBY', 'VIDEO'
     this.currentItem = null;
     this.listeners = new Set();
@@ -74,6 +75,12 @@ class StreamerEngine {
   }
 
   killProcess() {
+    if (this.pipeProc) {
+      try {
+        this.pipeProc.kill('SIGKILL');
+      } catch (_) {}
+      this.pipeProc = null;
+    }
     if (this.ffmpegProc) {
       try {
         this.ffmpegProc.kill('SIGKILL');
@@ -86,13 +93,13 @@ class StreamerEngine {
     if (!this.shouldRun) return;
 
     const queue = db.getQueue();
-    // Procura primeiro item disponível para transmissão
+    // Procura primeiro item disponível para transmissão (arquivo pronto ou stream direto)
     const readyItem = queue.find(i => i.status === 'ready');
 
-    if (readyItem && readyItem.filePath && fs.existsSync(readyItem.filePath)) {
+    if (readyItem && ((readyItem.streamMode === 'direct' && readyItem.url) || (readyItem.filePath && fs.existsSync(readyItem.filePath)))) {
       this.streamVideo(readyItem);
     } else {
-      // Se não há vídeo baixado pronto, aciona o downloader e entra em tela de Standby contínua!
+      // Se não há vídeo pronto na fila, entra em tela de Standby contínua e verifica downloads
       console.log('[Streamer] Nenhum vídeo pronto na fila. Entrando em vinheta Standby TV Braza 24h...');
       downloader.checkQueue();
       this.streamStandby();
@@ -106,8 +113,9 @@ class StreamerEngine {
 
     const settings = db.getSettings();
     const rtmpTarget = this.getStreamTarget();
+    const isDirect = item.streamMode === 'direct';
 
-    console.log(`[Streamer] INICIANDO NO AR: "${item.title}"`);
+    console.log(`[Streamer] INICIANDO NO AR: "${item.title}" [Modo: ${isDirect ? '⚡ Stream Direto (Sem Anúncios)' : '💾 Arquivo'}]`);
     db.updateQueueItem(item.id, {
       status: 'playing',
       startedAt: new Date().toISOString()
@@ -128,7 +136,7 @@ class StreamerEngine {
       console.warn('[Streamer] Erro ao sincronizar metadados no YouTube:', err.message);
     });
 
-    // Pede ao Downloader para já ir baixando o PRÓXIMO vídeo da fila antecipadamente!
+    // Pede ao Downloader para já ir baixando o PRÓXIMO vídeo da fila se for modo download
     downloader.checkQueue(item.id);
 
     const videoBitrate = settings.videoBitrate || '4500k';
@@ -139,12 +147,48 @@ class StreamerEngine {
       console.warn('[Streamer] AVISO: Chave do YouTube não configurada! Configure a Stream Key no Painel Web.');
     }
 
-    const outputTarget = rtmpTarget || '-f null -';
+    let inputArgs = [];
+    let pipeSourceProc = null;
+
+    if (isDirect) {
+      console.log(`[Streamer] ⚡ Invocando motor de Stream Direto (sem anúncios / estilo Brave) para: ${item.url}`);
+      const ytdlpArgs = [
+        '--no-playlist',
+        '-f', 'b/best',
+        '--extractor-args', 'youtube:player_client=android,ios,web',
+        '--no-warnings',
+        '-o', '-'
+      ];
+
+      if (settings.enableSponsorBlock !== false) {
+        ytdlpArgs.push('--sponsorblock-remove', 'sponsor,selfpromo');
+      }
+
+      const cookiesPath = path.join(DATA_DIR, 'cookies.txt');
+      if (fs.existsSync(cookiesPath) && fs.statSync(cookiesPath).size > 0) {
+        ytdlpArgs.push('--cookies', cookiesPath);
+      }
+
+      ytdlpArgs.push(item.url);
+
+      pipeSourceProc = spawn('yt-dlp', ytdlpArgs);
+      this.pipeProc = pipeSourceProc;
+
+      pipeSourceProc.stderr.on('data', (d) => {
+        const text = d.toString();
+        if (text.includes('ERROR:')) {
+          console.warn(`[Streamer Direct yt-dlp stderr] ${text.trim()}`);
+        }
+      });
+
+      inputArgs = ['-re', '-i', 'pipe:0'];
+    } else {
+      inputArgs = ['-re', '-i', item.filePath];
+    }
 
     // Montagem do comando FFmpeg para transmissão profissional contínua
     const args = [
-      '-re',
-      '-i', item.filePath,
+      ...inputArgs,
       '-c:v', 'libx264',
       '-preset', 'veryfast',
       '-b:v', videoBitrate,
@@ -173,27 +217,43 @@ class StreamerEngine {
       // Callback executado ao terminar o vídeo
       console.log(`[Streamer] VÍDEO CONCLUÍDO: "${item.title}". Limpando disco e avançando...`);
       
-      // Remove o vídeo concluído da fila e apaga o arquivo do disco imediatamente!
+      // Remove o vídeo concluído da fila e apaga o arquivo do disco se for local
       if (settings.autoDeleteFinished) {
         db.archiveFinishedItem(item.id);
       }
 
       this.currentItem = null;
       this.playNextInQueue();
-    });
+    }, pipeSourceProc);
   }
 
-  spawnFfmpeg(args, onFinish) {
+  spawnFfmpeg(args, onFinish, pipeSourceProc = null) {
     console.log(`[Streamer] Executando FFmpeg: ffmpeg ${args.slice(0, 6).join(' ')} ...`);
     let proc;
     try {
       proc = spawn('ffmpeg', args);
     } catch (e) {
       console.warn(`[Streamer] Falha ao disparar ffmpeg: ${e.message}`);
+      if (pipeSourceProc) {
+        try { pipeSourceProc.kill('SIGKILL'); } catch (_) {}
+      }
       onFinish(-2);
       return;
     }
     this.ffmpegProc = proc;
+
+    if (pipeSourceProc) {
+      pipeSourceProc.stdout.pipe(proc.stdin);
+      proc.stdin.on('error', () => {});
+      pipeSourceProc.on('error', (err) => {
+        console.error('[Streamer Direct yt-dlp erro]', err.message);
+      });
+      pipeSourceProc.on('close', (code) => {
+        if (code !== 0) {
+          console.warn(`[Streamer Direct yt-dlp fechado (código ${code})]`);
+        }
+      });
+    }
 
     proc.stderr.on('data', (chunk) => {
       const line = chunk.toString();

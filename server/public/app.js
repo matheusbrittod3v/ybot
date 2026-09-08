@@ -445,14 +445,15 @@ function renderQueue(queue) {
     const row = document.createElement('div');
     row.className = `queue-item ${isPlaying ? 'playing' : ''}`;
 
+    const isDirect = item.streamMode === 'direct';
     let statusClass = 'queued';
     let statusText = 'Na Fila';
     if (isPlaying) {
       statusClass = 'playing';
-      statusText = 'No Ar';
+      statusText = isDirect ? '⚡ No Ar (Stream Direto)' : 'No Ar';
     } else if (item.status === 'ready') {
       statusClass = 'ready';
-      statusText = 'Baixado';
+      statusText = isDirect ? '⚡ Stream Direto' : 'Baixado';
     } else if (item.status === 'downloading') {
       statusClass = 'downloading';
       statusText = `Baixando ${item.downloadProgress || 0}%`;
@@ -474,6 +475,7 @@ function renderQueue(queue) {
       <div class="queue-info">
         <div class="queue-item-title" title="${escapeHtml(displayTitle)}">
           ${escapeHtml(displayTitle)}
+          ${isDirect ? '<span style="display:inline-block; background: rgba(16, 185, 129, 0.2); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.35); font-size: 10px; padding: 1px 6px; border-radius: 4px; font-weight: bold; margin-left: 6px; vertical-align: middle;">⚡ SEM ANÚNCIOS</span>' : ''}
         </div>
         <div class="queue-item-meta">
           <span>Canal: ${escapeHtml(item.channel || 'YouTube')}</span>
@@ -1140,8 +1142,12 @@ async function handleInspectUrl() {
 async function handleConfirmAdd() {
   if (!pendingVideoPreview) return;
 
+  const streamModeEl = document.querySelector('input[name="playback-mode"]:checked');
+  const streamMode = streamModeEl ? streamModeEl.value : 'direct';
+
   const payload = {
     ...pendingVideoPreview,
+    streamMode,
     liveTitle: elInputLiveTitle ? elInputLiveTitle.value.trim() : pendingVideoPreview.title
   };
 
@@ -1154,7 +1160,7 @@ async function handleConfirmAdd() {
     const data = await res.json();
 
     if (data.success) {
-      showToast(`"${data.item.liveTitle || data.item.title}" adicionado à grade!`, 'success');
+      showToast(`"${data.item.liveTitle || data.item.title}" adicionado à grade [${streamMode === 'direct' ? '⚡ Stream Direto sem Anúncios' : '💾 Download'}]!`, 'success');
       elInputYtUrl.value = '';
       elUrlPreviewCard.classList.add('hidden');
       pendingVideoPreview = null;
@@ -1175,22 +1181,25 @@ async function handleQuickAdd() {
     return;
   }
 
+  const streamModeEl = document.querySelector('input[name="playback-mode"]:checked');
+  const streamMode = streamModeEl ? streamModeEl.value : 'direct';
+
   const elBtnQuickAdd = document.getElementById('btn-quick-add');
   const elSpinnerQuickAdd = document.getElementById('spinner-quick-add');
   if (elBtnQuickAdd) elBtnQuickAdd.disabled = true;
   if (elSpinnerQuickAdd) elSpinnerQuickAdd.classList.remove('hidden');
 
   try {
-    showToast('Consultando vídeo e iniciando download...', 'info');
+    showToast(streamMode === 'direct' ? '⚡ Configurando Stream Direto sem anúncios estilo Brave...' : 'Consultando vídeo e iniciando download...', 'info');
     const res = await fetch('/api/queue/quick-add', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url })
+      body: JSON.stringify({ url, streamMode })
     });
     const data = await res.json();
 
     if (data.success) {
-      showToast(`"${data.item.title}" adicionado! Download em andamento...`, 'success');
+      showToast(`"${data.item.title}" pronto na grade [${streamMode === 'direct' ? '⚡ Stream Direto sem Anúncios' : '💾 Baixando'}]!`, 'success');
       elInputYtUrl.value = '';
       elUrlPreviewCard.classList.add('hidden');
       pendingVideoPreview = null;

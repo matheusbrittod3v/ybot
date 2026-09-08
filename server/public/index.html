@@ -261,6 +261,24 @@
               <span class="spinner hidden" id="spinner-inspect"></span>
             </button>
           </div>
+
+          <!-- Modo de Transmissão: Stream Direto Sem Anúncios vs Download -->
+          <div class="stream-mode-selector" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-top: 10px; margin-bottom: 6px; padding: 10px 14px; background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.25); border-radius: 8px;">
+            <div style="display: flex; align-items: center; gap: 16px; flex-wrap: wrap;">
+              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; color: #f3f4f6; font-weight: 600;">
+                <input type="radio" name="playback-mode" value="direct" id="mode-direct-stream" checked style="accent-color: #f59e0b; width: 16px; height: 16px;">
+                <span>⚡ <strong>Stream Direto (Sem Download / Sem Anúncios)</strong></span>
+                <span style="font-size: 11px; background: rgba(16, 185, 129, 0.2); color: #10b981; padding: 2px 7px; border-radius: 4px; border: 1px solid rgba(16, 185, 129, 0.3); font-weight: bold;">Estilo Brave / Toca Imediato</span>
+              </label>
+              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; color: #9ca3af; font-weight: 500;">
+                <input type="radio" name="playback-mode" value="download" id="mode-download-file" style="accent-color: #f59e0b; width: 16px; height: 16px;">
+                <span>💾 Baixar para o Disco (Modo Clássico)</span>
+              </label>
+            </div>
+            <div style="font-size: 11px; color: #94a3b8; display: flex; align-items: center; gap: 4px;">
+              🛡️ <span>Bloqueio nativo de anúncios & patrocínios (SponsorBlock)</span>
+            </div>
+          </div>
         </div>
 
         <!-- Preview do Vídeo Consultado antes de Confirmar -->

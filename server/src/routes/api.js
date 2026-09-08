@@ -184,7 +184,7 @@ router.post('/queue/preview', async (req, res) => {
 
 // Adicionar vídeo rápido diretamente (1 clique, sem preview)
 router.post('/queue/quick-add', async (req, res) => {
-  const { url } = req.body;
+  const { url, streamMode } = req.body;
   if (!url) {
     return res.status(400).json({ success: false, error: 'URL do vídeo é obrigatória' });
   }
@@ -192,6 +192,7 @@ router.post('/queue/quick-add', async (req, res) => {
   try {
     const videoData = await fetchVideoInfo(url);
     const settings = db.getSettings();
+    const isDirect = (streamMode || settings.defaultStreamMode || 'direct') === 'direct';
     const finalLiveTitle = `${settings.defaultLiveTitlePrefix || ''}${videoData.title}`.substring(0, 100);
 
     const newItem = db.addToQueue({
@@ -201,14 +202,29 @@ router.post('/queue/quick-add', async (req, res) => {
       liveTitle: finalLiveTitle,
       customThumbPath: null,
       customThumbUrl: null,
-      status: 'queued'
+      streamMode: isDirect ? 'direct' : 'download',
+      status: isDirect ? 'ready' : 'queued',
+      downloadProgress: isDirect ? 100 : 0,
+      downloadSpeed: isDirect ? '⚡ Stream Direto (Sem Anúncios)' : '',
+      filePath: null
     });
 
-    console.log(`[Queue] Vídeo "${newItem.title}" adicionado via Quick-Add. Acionando downloader...`);
-    downloader.checkQueue();
+    console.log(`[Queue] Vídeo "${newItem.title}" adicionado [Modo: ${isDirect ? '⚡ Stream Direto' : '💾 Download'}].`);
 
-    if (streamer.shouldRun && streamer.currentMode === 'STANDBY') {
-      setTimeout(() => streamer.playNextInQueue(), 500);
+    // Notifica WebSocket instantaneamente
+    downloader.broadcast('download_complete', { item: newItem });
+    streamer.broadcast('queue_updated', { queue: db.getQueue() });
+
+    if (!isDirect) {
+      downloader.checkQueue();
+    }
+
+    if (streamer.shouldRun) {
+      if (streamer.currentMode === 'STANDBY') {
+        setTimeout(() => streamer.playNextInQueue(), 300);
+      }
+    } else if (settings.autoLoopStandby) {
+      streamer.start();
     }
 
     res.json({ success: true, item: newItem });
@@ -229,7 +245,8 @@ router.post('/queue/add', async (req, res) => {
     channel,
     liveTitle,
     customThumbPath,
-    customThumbUrl
+    customThumbUrl,
+    streamMode
   } = req.body;
 
   if (!url) {
@@ -258,6 +275,7 @@ router.post('/queue/add', async (req, res) => {
     }
 
     const settings = db.getSettings();
+    const isDirect = (streamMode || settings.defaultStreamMode || 'direct') === 'direct';
     const finalLiveTitle = (liveTitle || `${settings.defaultLiveTitlePrefix || ''}${videoData.title}`).substring(0, 100);
 
     const newItem = db.addToQueue({
@@ -267,17 +285,27 @@ router.post('/queue/add', async (req, res) => {
       liveTitle: finalLiveTitle,
       customThumbPath: customThumbPath || null,
       customThumbUrl: customThumbUrl || null,
-      status: 'queued'
+      streamMode: isDirect ? 'direct' : 'download',
+      status: isDirect ? 'ready' : 'queued',
+      downloadProgress: isDirect ? 100 : 0,
+      downloadSpeed: isDirect ? '⚡ Stream Direto (Sem Anúncios)' : '',
+      filePath: null
     });
 
-    // Dispara checagem do Downloader para ver se este item deve ser pré-baixado
-    downloader.checkQueue();
+    // Notifica WebSocket instantaneamente
+    downloader.broadcast('download_complete', { item: newItem });
+    streamer.broadcast('queue_updated', { queue: db.getQueue() });
 
-    // Se o streamer estiver em standby ou sem vídeo no ar, notifica
-    if (streamer.shouldRun && streamer.currentMode === 'STANDBY') {
-      setTimeout(() => {
-        streamer.playNextInQueue();
-      }, 500);
+    if (!isDirect) {
+      downloader.checkQueue();
+    }
+
+    if (streamer.shouldRun) {
+      if (streamer.currentMode === 'STANDBY') {
+        setTimeout(() => streamer.playNextInQueue(), 300);
+      }
+    } else if (settings.autoLoopStandby) {
+      streamer.start();
     }
 
     res.json({ success: true, item: newItem });

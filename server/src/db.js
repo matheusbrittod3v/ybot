@@ -72,6 +72,8 @@ const DEFAULT_SETTINGS = {
   enableWatermark: true,
   watermarkText: 'TV BRAZA - AO VIVO',
   autoLoopStandby: true,
+  enableSponsorBlock: true, // Bloqueia patrocinadores internos (SponsorBlock) estilo Brave
+  defaultStreamMode: 'direct', // 'direct' = Stream direto sem download / sem anúncios
   adminPassword: process.env.ADMIN_PASSWORD || 'admin123'
 };
 
