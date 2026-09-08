@@ -1,7 +1,15 @@
+import fs from 'fs';
+import path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import { DATA_DIR } from '../db.js';
 
 const execFileAsync = promisify(execFile);
+
+export function getCookiesFilePath() {
+  const cookiesPath = path.join(DATA_DIR, 'cookies.txt');
+  return fs.existsSync(cookiesPath) ? cookiesPath : null;
+}
 
 export function extractYouTubeId(url) {
   if (!url) return null;
@@ -30,13 +38,21 @@ export async function fetchVideoInfo(url) {
 
   // 1. Try with yt-dlp first if available
   try {
-    const { stdout } = await execFileAsync('yt-dlp', [
+    const args = [
       '--dump-json',
       '--no-warnings',
       '--no-playlist',
-      url
-    ], { timeout: 15000 });
+      '--extractor-args', 'youtube:player_client=android,ios,web'
+    ];
 
+    const cookiesPath = getCookiesFilePath();
+    if (cookiesPath) {
+      args.push('--cookies', cookiesPath);
+    }
+
+    args.push(url);
+
+    const { stdout } = await execFileAsync('yt-dlp', args, { timeout: 15000 });
     const data = JSON.parse(stdout);
     return {
       videoId,

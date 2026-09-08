@@ -127,9 +127,15 @@ class DownloaderEngine {
         '--merge-output-format', 'mp4',
         '--no-playlist',
         '--no-mtime',
-        '-o', targetFile,
-        item.url
+        '--extractor-args', 'youtube:player_client=android,ios,web'
       ];
+
+      const cookiesPath = path.join(MEDIA_DIR, '../cookies.txt');
+      if (fs.existsSync(cookiesPath)) {
+        args.push('--cookies', cookiesPath);
+      }
+
+      args.push('-o', targetFile, item.url);
 
       console.log(`[Downloader] Executando yt-dlp para item ${item.id} (${item.url})`);
       const proc = spawn('yt-dlp', args);

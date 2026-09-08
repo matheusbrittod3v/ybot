@@ -289,4 +289,39 @@ router.post('/history/clear', (req, res) => {
   res.json({ success: true });
 });
 
+// Gerenciamento de Cookies do YouTube (Anti-Bot na VPS)
+router.get('/cookies', (req, res) => {
+  const cookiesPath = path.join(db.data ? path.resolve(process.env.DATA_DIR || './data') : './data', 'cookies.txt');
+  const exists = fs.existsSync(cookiesPath);
+  let size = 0;
+  if (exists) {
+    try {
+      size = fs.statSync(cookiesPath).size;
+    } catch (_) {}
+  }
+  res.json({ success: true, exists, size });
+});
+
+router.post('/cookies', (req, res) => {
+  const { cookies } = req.body;
+  if (!cookies || typeof cookies !== 'string' || !cookies.trim()) {
+    return res.status(400).json({ success: false, error: 'Conteúdo de cookies vazio' });
+  }
+  const dataDir = path.resolve(process.env.DATA_DIR || './data');
+  const cookiesPath = path.join(dataDir, 'cookies.txt');
+  fs.writeFileSync(cookiesPath, cookies.trim(), 'utf-8');
+  console.log(`[Cookies] Arquivo cookies.txt salvo na VPS com sucesso (${cookies.length} bytes)!`);
+  res.json({ success: true, message: 'Arquivo cookies.txt salvo com sucesso!' });
+});
+
+router.delete('/cookies', (req, res) => {
+  const dataDir = path.resolve(process.env.DATA_DIR || './data');
+  const cookiesPath = path.join(dataDir, 'cookies.txt');
+  if (fs.existsSync(cookiesPath)) {
+    fs.unlinkSync(cookiesPath);
+    console.log('[Cookies] Arquivo cookies.txt removido.');
+  }
+  res.json({ success: true });
+});
+
 export default router;

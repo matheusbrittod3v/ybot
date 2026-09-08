@@ -705,6 +705,45 @@ function setupEventListeners() {
     });
   }
 
+  // Salvar e Remover Cookies do YouTube
+  if (elBtnSaveCookies) {
+    elBtnSaveCookies.addEventListener('click', async () => {
+      const text = elCfgCookiesText?.value.trim();
+      if (!text) {
+        showToast('Cole o conteúdo do cookies.txt primeiro', 'warning');
+        return;
+      }
+      try {
+        const res = await fetch('/api/cookies', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cookies: text })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast('Cookies do YouTube salvos na VPS!', 'success');
+          if (elCfgCookiesText) elCfgCookiesText.value = '';
+          checkCookiesStatus();
+        } else {
+          showToast(data.error || 'Erro ao salvar cookies', 'error');
+        }
+      } catch (err) {
+        showToast('Erro ao salvar cookies', 'error');
+      }
+    });
+  }
+
+  if (elBtnDeleteCookies) {
+    elBtnDeleteCookies.addEventListener('click', async () => {
+      if (!confirm('Deseja remover o arquivo cookies.txt da VPS?')) return;
+      try {
+        await fetch('/api/cookies', { method: 'DELETE' });
+        showToast('Arquivo cookies.txt removido.', 'info');
+        checkCookiesStatus();
+      } catch (_) {}
+    });
+  }
+
   // Drawer de logs
   elBtnOpenLogs.addEventListener('click', () => elDrawerLogs.classList.remove('hidden'));
   elBtnCloseLogs.addEventListener('click', () => elDrawerLogs.classList.add('hidden'));
@@ -886,6 +925,29 @@ window.moveQueueItem = async function(id, direction) {
   }
 };
 
+// Cookies do YouTube
+const elCookiesStatusBadge = document.getElementById('cookies-status-badge');
+const elBtnDeleteCookies = document.getElementById('btn-delete-cookies');
+const elCfgCookiesText = document.getElementById('cfg-cookies-text');
+const elBtnSaveCookies = document.getElementById('btn-save-cookies');
+
+async function checkCookiesStatus() {
+  if (!elCookiesStatusBadge) return;
+  try {
+    const res = await fetch('/api/cookies');
+    const data = await res.json();
+    if (data.exists) {
+      elCookiesStatusBadge.className = 'badge-status ready';
+      elCookiesStatusBadge.textContent = `✓ Cookies Ativos (${(data.size / 1024).toFixed(1)} KB)`;
+      if (elBtnDeleteCookies) elBtnDeleteCookies.classList.remove('hidden');
+    } else {
+      elCookiesStatusBadge.className = 'badge-status';
+      elCookiesStatusBadge.textContent = 'Cliente Android Ativo (Sem cookies)';
+      if (elBtnDeleteCookies) elBtnDeleteCookies.classList.add('hidden');
+    }
+  } catch (_) {}
+}
+
 // ============================================================
 // CONFIGURAÇÕES
 // ============================================================
@@ -910,6 +972,7 @@ async function openSettingsModal() {
       if (elCfgGoogleClientSecret) elCfgGoogleClientSecret.value = s.googleClientSecret || '';
       if (elCfgGoogleRefreshToken) elCfgGoogleRefreshToken.value = s.googleRefreshToken || '';
 
+      checkCookiesStatus();
       elModalSettings.classList.remove('hidden');
     }
   } catch (err) {

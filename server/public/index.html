@@ -483,6 +483,21 @@
                 </div>
               </div>
             </details>
+          <!-- Seção de Cookies do YouTube (Bypass Anti-Bot na VPS) -->
+          <div class="settings-divider">
+            <h4>COOKIES DO YOUTUBE (BYPASS ANTI-BOT NA VPS)</h4>
+            <small>O sistema já usa o cliente mobile Android para contornar bloqueios. Se algum vídeo exigir login adicional ("Sign in to confirm you're not a bot"), cole os cookies aqui.</small>
+          </div>
+
+          <div class="form-group">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+              <span id="cookies-status-badge" class="badge-status">Checando cookies...</span>
+              <button type="button" class="btn-small-danger hidden" id="btn-delete-cookies">Remover cookies.txt</button>
+            </div>
+            <textarea id="cfg-cookies-text" rows="3" placeholder="Cole aqui o conteúdo do seu cookies.txt (formato Netscape) se desejar..."></textarea>
+            <div style="display: flex; justify-content: flex-end; margin-top: 6px;">
+              <button type="button" class="btn-small-amber" id="btn-save-cookies">Salvar Cookies</button>
+            </div>
           </div>
 
           <div class="modal-footer">

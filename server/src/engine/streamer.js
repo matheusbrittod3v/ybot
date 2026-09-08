@@ -223,8 +223,8 @@ class StreamerEngine {
       console.log(`[Streamer] Processo FFmpeg finalizado (código ${code})`);
       if (this.ffmpegProc === proc) {
         this.ffmpegProc = null;
+        onFinish(code);
       }
-      onFinish(code);
     });
 
     proc.on('error', (err) => {
@@ -241,6 +241,11 @@ class StreamerEngine {
   }
 
   streamStandby() {
+    // Se já estiver transmitindo standby ativamente, não reinicie!
+    if (this.currentMode === 'STANDBY' && this.ffmpegProc) {
+      return;
+    }
+
     this.killProcess();
     this.currentMode = 'STANDBY';
     this.currentItem = null;
