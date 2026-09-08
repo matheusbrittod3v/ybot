@@ -1,5 +1,6 @@
 import fs from 'fs';
-import { db } from '../db.js';
+import path from 'path';
+import { db, THUMBS_DIR } from '../db.js';
 import { extractYouTubeId } from './youtube.js';
 
 class YouTubeMetadataUpdater {
@@ -235,6 +236,42 @@ class YouTubeMetadataUpdater {
   }
 
   /**
+   * Garante a thumbnail local: se for customizada usa ela, se não, baixa automaticamente
+   * a capa original em alta definição (1080p maxres) do vídeo do YouTube para enviar à Live.
+   */
+  async ensureLocalThumbnail(item) {
+    if (item.customThumbPath && fs.existsSync(item.customThumbPath)) {
+      return item.customThumbPath;
+    }
+
+    const ytid = extractYouTubeId(item.url);
+    const candidateUrls = [
+      ytid ? `https://i.ytimg.com/vi/${ytid}/maxresdefault.jpg` : null,
+      ytid ? `https://i.ytimg.com/vi/${ytid}/hqdefault.jpg` : null,
+      item.thumbnail
+    ].filter(Boolean);
+
+    for (const url of candidateUrls) {
+      if (!url.startsWith('http')) continue;
+      try {
+        const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+        if (res.ok) {
+          const buffer = Buffer.from(await res.arrayBuffer());
+          // Evita placeholders vazios do YouTube (imagens menores que 2KB)
+          if (buffer.length > 2048) {
+            const ext = url.includes('.png') ? '.png' : '.jpg';
+            const localFile = path.join(THUMBS_DIR, `auto_thumb_${item.id || Date.now()}${ext}`);
+            fs.writeFileSync(localFile, buffer);
+            return localFile;
+          }
+        }
+      } catch (_) {}
+    }
+
+    return null;
+  }
+
+  /**
    * Sincroniza metadados completos (Título e Thumbnail) quando um programa entra no ar
    */
   async syncItemMetadata(item) {
@@ -262,9 +299,15 @@ class YouTubeMetadataUpdater {
       await this.updateTitle(videoId, liveTitle);
     }
 
-    // 2. Atualiza Thumbnail no YouTube se houver imagem personalizada
-    if (item.customThumbPath && fs.existsSync(item.customThumbPath)) {
-      await this.updateThumbnail(videoId, item.customThumbPath);
+    // 2. Atualiza Thumbnail no YouTube automaticamente (customizada ou original em HD)
+    try {
+      const thumbFile = await this.ensureLocalThumbnail(item);
+      if (thumbFile && fs.existsSync(thumbFile)) {
+        console.log(`[YouTube Updater] Enviando thumbnail da atração para a Live no YouTube Studio...`);
+        await this.updateThumbnail(videoId, thumbFile);
+      }
+    } catch (err) {
+      console.warn('[YouTube Updater] Falha ao atualizar thumbnail da Live:', err.message);
     }
   }
 }
