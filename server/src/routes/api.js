@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import multer from 'multer';
-import { db, DATA_DIR, THUMBS_DIR, MEDIA_DIR } from '../db.js';
+import { db, DATA_DIR, THUMBS_DIR, MEDIA_DIR, ensureDirectories } from '../db.js';
 import { streamer } from '../engine/streamer.js';
 import { downloader } from '../engine/downloader.js';
 import { fetchVideoInfo, formatDuration } from '../utils/youtube.js';
@@ -44,7 +44,12 @@ const uploadCookie = multer({
 // Configuração do Multer para upload de thumbnails personalizadas
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, THUMBS_DIR);
+    try {
+      ensureDirectories();
+      cb(null, THUMBS_DIR);
+    } catch (err) {
+      cb(err);
+    }
   },
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase() || '.jpg';
@@ -68,7 +73,12 @@ const upload = multer({
 // Configuração do Multer para upload manual de vídeos (MP4, MKV, MOV, TS, WebM)
 const videoStorage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, MEDIA_DIR);
+    try {
+      ensureDirectories();
+      cb(null, MEDIA_DIR);
+    } catch (err) {
+      cb(err);
+    }
   },
   filename: (req, file, cb) => {
     const id = crypto.randomUUID();
@@ -318,15 +328,25 @@ router.post('/queue/upload', uploadVideo.single('video'), async (req, res) => {
 
     console.log(`[Queue] Vídeo manual adicionado com sucesso: "${title}" (${(stats.size / 1024 / 1024).toFixed(1)} MB)!`);
 
+    // Notifica instantaneamente todos os navegadores conectados
+    downloader.broadcast('download_complete', { item: newItem });
+    streamer.broadcast('queue_updated', { queue: db.getQueue() });
+
+    // Se o streamer estiver em standby ou parado mas configurado para loop contínuo, toca imediatamente!
+    if (streamer.shouldRun) {
+      if (streamer.currentMode === 'STANDBY') {
+        console.log('[Streamer] Standby ativo: iniciando reprodução imediata do vídeo enviado...');
+        setTimeout(() => {
+          streamer.playNextInQueue();
+        }, 300);
+      }
+    } else if (settings.autoLoopStandby) {
+      console.log('[Streamer] Inicializando streamer após upload...');
+      streamer.start();
+    }
+
     // Dispara checagem do Downloader
     downloader.checkQueue();
-
-    // Se o streamer estiver em standby, troca imediatamente para o vídeo novo
-    if (streamer.shouldRun && streamer.currentMode === 'STANDBY') {
-      setTimeout(() => {
-        streamer.playNextInQueue();
-      }, 500);
-    }
 
     res.json({
       success: true,

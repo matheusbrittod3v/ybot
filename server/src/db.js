@@ -4,20 +4,56 @@ import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(__dirname, '../../data'));
-const DB_FILE = path.join(DATA_DIR, 'db.json');
 
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+// Resolução inteligente e ultra-robusta do diretório de dados persistentes
+function resolveDataDir() {
+  const candidates = [
+    process.env.DATA_DIR,
+    path.resolve(path.join(__dirname, '../../data')),
+    '/app/data',
+    path.resolve('./data'),
+    '/tmp/tvbraza_data'
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    try {
+      const resolved = path.resolve(candidate);
+      if (!fs.existsSync(resolved)) {
+        fs.mkdirSync(resolved, { recursive: true });
+      }
+      // Testa permissão real de escrita para prevenir ENOENT ou EACCES no container
+      const testFile = path.join(resolved, `.write_test_${process.pid}`);
+      fs.writeFileSync(testFile, 'test');
+      fs.unlinkSync(testFile);
+      return resolved;
+    } catch (err) {
+      console.warn(`[DB] Aviso: Diretório candidato "${candidate}" inacessível (${err.message}). Tentando próximo...`);
+    }
+  }
+
+  const fallback = path.resolve(path.join(__dirname, '../../data'));
+  try { fs.mkdirSync(fallback, { recursive: true }); } catch (_) {}
+  return fallback;
 }
+
+const DATA_DIR = resolveDataDir();
+const DB_FILE = path.join(DATA_DIR, 'db.json');
 const MEDIA_DIR = path.join(DATA_DIR, 'media');
-if (!fs.existsSync(MEDIA_DIR)) {
-  fs.mkdirSync(MEDIA_DIR, { recursive: true });
-}
 const THUMBS_DIR = path.join(DATA_DIR, 'thumbs');
-if (!fs.existsSync(THUMBS_DIR)) {
-  fs.mkdirSync(THUMBS_DIR, { recursive: true });
+
+export function ensureDirectories() {
+  for (const dir of [DATA_DIR, MEDIA_DIR, THUMBS_DIR]) {
+    try {
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+    } catch (err) {
+      console.error(`[DB] Erro ao garantir diretório ${dir}:`, err.message);
+    }
+  }
 }
+
+ensureDirectories();
 
 const DEFAULT_SETTINGS = {
   youtubeStreamKey: process.env.YOUTUBE_STREAM_KEY || '',
@@ -82,11 +118,20 @@ class Database {
 
   save(dataToSave = this.data) {
     try {
+      ensureDirectories();
       const tmpFile = `${DB_FILE}.tmp`;
       fs.writeFileSync(tmpFile, JSON.stringify(dataToSave, null, 2), 'utf-8');
       fs.renameSync(tmpFile, DB_FILE);
     } catch (err) {
-      console.error('[DB] Erro ao salvar banco:', err.message);
+      console.error('[DB] Erro ao salvar banco com tmp:', err.message);
+      // Fallback seguro: grava direto no DB_FILE se rename ou tmp falharem
+      try {
+        const dir = path.dirname(DB_FILE);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(DB_FILE, JSON.stringify(dataToSave, null, 2), 'utf-8');
+      } catch (err2) {
+        console.error('[DB] Falha crítica ao salvar banco:', err2.message);
+      }
     }
   }
 
@@ -115,8 +160,8 @@ class Database {
       order: maxOrder + 1,
       createdAt: new Date().toISOString(),
       status: item.status || 'queued',
-      downloadProgress: 0,
-      downloadSpeed: '',
+      downloadProgress: item.downloadProgress !== undefined ? item.downloadProgress : 0,
+      downloadSpeed: item.downloadSpeed || '',
       filePath: item.filePath || null
     };
     this.data.queue.push(newItem);
@@ -226,7 +271,11 @@ class Database {
 
   updatePlayoutState(updates) {
     this.data.playoutState = { ...this.data.playoutState, ...updates };
-    this.save();
+    // Salva em disco apenas em mudanças reais de estado (ex: PLAYING, STANDBY, STOPPED)
+    // ou troca de vídeo ativo. Não satura o disco em telemetria frame a frame.
+    if (updates.state || updates.activeItemId !== undefined) {
+      this.save();
+    }
     return this.data.playoutState;
   }
 }

@@ -410,6 +410,19 @@ class DownloaderEngine {
         allowedId2 ? `${allowedId2}.mp4` : null
       ].filter(Boolean));
 
+      // CRÍTICO: Nunca deletar vídeos enviados manualmente ou que estão na grade de transmissão!
+      try {
+        const currentQueue = db.getQueue();
+        for (const item of currentQueue) {
+          if (item.source === 'upload' || item.status === 'ready' || item.status === 'playing') {
+            allowedNames.add(`${item.id}.mp4`);
+            if (item.filePath) {
+              allowedNames.add(path.basename(item.filePath));
+            }
+          }
+        }
+      } catch (_) {}
+
       for (const file of files) {
         if (file.endsWith('.mp4') && !allowedNames.has(file)) {
           const filePath = path.join(MEDIA_DIR, file);

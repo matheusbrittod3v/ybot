@@ -175,6 +175,11 @@ function handleWsMessage(msg) {
       if (data.queue) renderQueue(data.queue);
       break;
 
+    case 'queue_updated':
+      if (data.queue) renderQueue(data.queue);
+      fetchStatus();
+      break;
+
     case 'telemetry':
       if (data.system) updateSystemStats(data.system);
       if (data.playout) updateStreamMetrics(data.playout);

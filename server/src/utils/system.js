@@ -37,24 +37,24 @@ export function getSystemStats() {
   };
 
   try {
-    const stats = fs.statfsSync(DATA_DIR);
-    const totalBytes = stats.bsize * stats.blocks;
-    const freeBytes = stats.bsize * stats.bavail;
-    const usedBytes = totalBytes - freeBytes;
-    const usedPercent = totalBytes > 0 ? Math.round((usedBytes / totalBytes) * 100) : 0;
+    if (fs.existsSync(DATA_DIR)) {
+      const stats = fs.statfsSync(DATA_DIR);
+      const totalBytes = stats.bsize * stats.blocks;
+      const freeBytes = stats.bsize * stats.bavail;
+      const usedBytes = totalBytes - freeBytes;
+      const usedPercent = totalBytes > 0 ? Math.round((usedBytes / totalBytes) * 100) : 0;
 
-    disk = {
-      total: totalBytes,
-      free: freeBytes,
-      used: usedBytes,
-      usedPercent,
-      totalFormatted: formatBytes(totalBytes),
-      freeFormatted: formatBytes(freeBytes),
-      usedFormatted: formatBytes(usedBytes)
-    };
-  } catch (err) {
-    console.error('[SystemStats] Erro ao obter statfs:', err.message);
-  }
+      disk = {
+        total: totalBytes,
+        free: freeBytes,
+        used: usedBytes,
+        usedPercent,
+        totalFormatted: formatBytes(totalBytes),
+        freeFormatted: formatBytes(freeBytes),
+        usedFormatted: formatBytes(usedBytes)
+      };
+    }
+  } catch (_) {}
 
   // Media folder stats
   let mediaStats = {
