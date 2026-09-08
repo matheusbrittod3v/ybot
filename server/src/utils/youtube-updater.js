@@ -7,6 +7,9 @@ class YouTubeMetadataUpdater {
   constructor() {
     this.accessToken = null;
     this.tokenExpiresAt = 0;
+    this.detectPromise = null;
+    this.lastUploadedThumbKey = null;
+    this.thumbCooldownUntil = 0;
   }
 
   /**
@@ -108,8 +111,21 @@ class YouTubeMetadataUpdater {
 
   /**
    * Consulta a API oficial do YouTube para descobrir a transmissão ativa ou mais recente do canal
+   * (Inclui deduplicação para chamadas concorrentes)
    */
   async detectAndSaveActiveBroadcast() {
+    if (this.detectPromise) {
+      return this.detectPromise;
+    }
+
+    this.detectPromise = this._doDetectAndSaveActiveBroadcast().finally(() => {
+      this.detectPromise = null;
+    });
+
+    return this.detectPromise;
+  }
+
+  async _doDetectAndSaveActiveBroadcast() {
     const token = await this.getValidAccessToken();
     if (!token) return null;
 
@@ -293,6 +309,13 @@ class YouTubeMetadataUpdater {
   async updateThumbnail(videoId, imagePath, isRetry = false) {
     if (!videoId || !imagePath || !fs.existsSync(imagePath)) return false;
 
+    // Se estiver em cooldown por limite de taxa do YouTube (429), não faz requisição inútil
+    if (this.thumbCooldownUntil && Date.now() < this.thumbCooldownUntil) {
+      const remainingMin = Math.ceil((this.thumbCooldownUntil - Date.now()) / 60000);
+      console.log(`[YouTube Updater] ⏳ Em cooldown de envio de thumbnails do YouTube (Rate Limit 429). Retomando em ~${remainingMin} min.`);
+      return false;
+    }
+
     const token = await this.getValidAccessToken();
     if (!token) {
       console.log(`[YouTube Updater] [Simulação] Thumbnail da Live atualizada para o arquivo: ${imagePath}`);
@@ -303,6 +326,13 @@ class YouTubeMetadataUpdater {
       const imageBuffer = fs.readFileSync(imagePath);
       const isPng = imagePath.toLowerCase().endsWith('.png');
       const contentType = isPng ? 'image/png' : 'image/jpeg';
+
+      // Evita re-enviar a mesma thumbnail se já foi enviada para este videoId
+      const currentKey = `${videoId}_${path.basename(imagePath)}_${imageBuffer.length}`;
+      if (this.lastUploadedThumbKey === currentKey) {
+        console.log('[YouTube Updater] 🖼️ Thumbnail da atração já está sincronizada com a Live no YouTube Studio.');
+        return true;
+      }
 
       const uploadUrl = `https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId=${videoId}`;
 
@@ -318,9 +348,16 @@ class YouTubeMetadataUpdater {
 
       if (res.ok) {
         console.log(`[YouTube Updater] ✅ Thumbnail enviada ao YouTube com sucesso!`);
+        this.lastUploadedThumbKey = currentKey;
         return true;
       } else {
         const err = await res.text();
+        if (res.status === 429 || err.includes('uploadRateLimitExceeded')) {
+          this.thumbCooldownUntil = Date.now() + (5 * 60 * 1000); // 5 minutos de cooldown
+          console.warn(`[YouTube Updater] ⏳ Limite de envio de thumbnails atingido no YouTube (Rate Limit 429). A transmissão continua normalmente e nova tentativa ocorrerá após o cooldown.`);
+          return false;
+        }
+
         if ((res.status === 404 || err.includes('videoNotFound')) && !isRetry) {
           console.warn(`[YouTube Updater] Vídeo ${videoId} não encontrado ao enviar thumbnail. Redetectando live ativa...`);
           db.updateSettings({ youtubeBroadcastVideoId: '' });
