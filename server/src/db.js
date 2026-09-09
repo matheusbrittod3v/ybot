@@ -117,6 +117,9 @@ class Database {
     if (this.initPromise) return this.initPromise;
 
     this.initPromise = (async () => {
+      // 1. Sempre carrega JSON local primeiro para garantir persistência imediata
+      this.loadJsonFallback();
+
       try {
         console.log(`[DB] Pool MySQL configurado para: ${this.dbUrl.replace(/:[^:@]+@/, ':****@')}`);
         this.pool = mysql.createPool({
@@ -138,9 +141,9 @@ class Database {
 
         this.isInitialized = true;
         console.log(`[DB] Banco MySQL sincronizado com sucesso! (Fila: ${this.data.queue.length} vídeos, Histórico: ${this.data.history.length})`);
+        this.saveJsonBackup();
       } catch (err) {
-        console.error('[DB] Falha ao inicializar MySQL, usando fallback em memória/JSON:', err.message);
-        this.loadJsonFallback();
+        console.error('[DB] Falha ao inicializar MySQL, usando fallback em db.json:', err.message);
       }
     })();
 
@@ -162,10 +165,19 @@ class Database {
     } catch (_) {}
   }
 
+  saveJsonBackup() {
+    try {
+      const dataToSave = JSON.stringify(this.data, null, 2);
+      fs.writeFileSync(DB_FILE, dataToSave, 'utf-8');
+    } catch (err) {
+      console.warn('[DB JSON Backup] Erro ao salvar db.json:', err.message);
+    }
+  }
+
   async syncSettings() {
     const [rows] = await this.pool.query('SELECT * FROM settings WHERE id = 1 LIMIT 1');
     if (rows.length === 0) {
-      let initialSettings = { ...DEFAULT_SETTINGS };
+      let initialSettings = { ...DEFAULT_SETTINGS, ...this.data.settings };
       await this.pool.query(
         `INSERT INTO settings (
           id, youtube_stream_key, youtube_rtmp_url, youtube_broadcast_video_id,
@@ -231,7 +243,14 @@ class Database {
 
   async syncQueue() {
     const [rows] = await this.pool.query('SELECT * FROM queue_items ORDER BY order_index ASC');
-    this.data.queue = rows.map(this.mapRowToQueueItem);
+    if (rows && rows.length > 0) {
+      this.data.queue = rows.map(r => this.mapRowToQueueItem(r));
+    } else if (this.data.queue.length > 0) {
+      // Re-sincroniza a fila local para o MySQL caso a tabela estivesse limpa
+      for (const item of this.data.queue) {
+        await this.insertQueueItemToDb(item);
+      }
+    }
   }
 
   async syncHistory() {
@@ -309,8 +328,12 @@ class Database {
       ON DUPLICATE KEY UPDATE
         order_index = VALUES(order_index),
         title = VALUES(title),
+        url = VALUES(url),
         status = VALUES(status),
+        stream_mode = VALUES(stream_mode),
         file_path = VALUES(file_path),
+        thumbnail_url = VALUES(thumbnail_url),
+        custom_thumb_path = VALUES(custom_thumb_path),
         download_progress = VALUES(download_progress),
         download_speed = VALUES(download_speed),
         last_position_seconds = VALUES(last_position_seconds),
@@ -319,15 +342,15 @@ class Database {
         item.id,
         item.order || 0,
         item.title || 'Vídeo sem título',
-        item.url,
+        item.url || '',
         item.duration || 0,
-        item.status || 'queued',
+        item.status || 'ready',
         item.streamMode || 'direct',
         item.filePath || null,
         item.thumbnail || null,
         item.customThumbPath || null,
-        item.downloadProgress || 0,
-        item.downloadSpeed || '',
+        item.downloadProgress !== undefined ? item.downloadProgress : 100,
+        item.downloadSpeed || '⚡ Stream Direto (Sem Anúncios)',
         item.lastPositionSeconds || 0,
         item.startAtSeconds || 0,
         item.createdAt || new Date().toISOString(),
@@ -365,6 +388,7 @@ class Database {
         ]
       ).catch(err => console.error('[DB MySQL] Erro ao atualizar settings:', err.message));
     }
+    this.saveJsonBackup();
     return this.data.settings;
   }
 
@@ -399,6 +423,7 @@ class Database {
       });
     }
 
+    this.saveJsonBackup();
     return newItem;
   }
 
@@ -411,20 +436,21 @@ class Database {
       if (this.pool) {
         this.pool.query(
           `UPDATE queue_items SET
-            title = ?, status = ?, duration = ?, file_path = ?,
-            custom_thumb_path = ?, download_progress = ?, download_speed = ?,
+            title = ?, url = ?, status = ?, duration = ?, file_path = ?,
+            thumbnail_url = ?, custom_thumb_path = ?, download_progress = ?, download_speed = ?,
             stream_mode = ?, last_position_seconds = ?, start_at_seconds = ?,
             finished_at = ?
           WHERE id = ?`,
           [
-            item.title, item.status, item.duration || 0, item.filePath || null,
-            item.customThumbPath || null, item.downloadProgress || 0, item.downloadSpeed || '',
+            item.title, item.url || '', item.status, item.duration || 0, item.filePath || null,
+            item.thumbnail || null, item.customThumbPath || null, item.downloadProgress || 0, item.downloadSpeed || '',
             item.streamMode || 'direct', item.lastPositionSeconds || 0, item.startAtSeconds || 0,
             item.finishedAt || null, id
           ]
         ).catch(err => console.error('[DB MySQL] Erro ao atualizar item da fila:', err.message));
       }
 
+      this.saveJsonBackup();
       return item;
     }
     return null;
@@ -449,6 +475,7 @@ class Database {
       this.pool.query('DELETE FROM queue_items WHERE id = ?', [id])
         .catch(err => console.error('[DB MySQL] Erro ao remover item da fila:', err.message));
     }
+    this.saveJsonBackup();
   }
 
   reorderQueue(orderedIds) {
@@ -475,6 +502,7 @@ class Database {
       }
     }
 
+    this.saveJsonBackup();
     return this.getQueue();
   }
 
@@ -508,6 +536,7 @@ class Database {
           [item.id, item.title, item.url, item.duration || 0, item.streamMode || 'direct', item.thumbnail || '', finishedAt]
         ).catch(err => console.error('[DB MySQL] Erro ao arquivar histórico:', err.message));
       }
+      this.saveJsonBackup();
     }
   }
 
