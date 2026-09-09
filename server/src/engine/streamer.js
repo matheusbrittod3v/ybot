@@ -397,8 +397,10 @@ class StreamerEngine {
           ];
           if (streamData.audioUrl && !streamData.isProgressive) {
             inputArgs = [
+              '-thread_queue_size', '4096',
               ...httpOptions,
               '-i', streamData.videoUrl,
+              '-thread_queue_size', '4096',
               ...httpOptions,
               '-i', streamData.audioUrl,
               '-map', '0:v:0',
@@ -406,6 +408,7 @@ class StreamerEngine {
             ];
           } else {
             inputArgs = [
+              '-thread_queue_size', '4096',
               ...httpOptions,
               '-i', streamData.videoUrl
             ];
@@ -417,7 +420,7 @@ class StreamerEngine {
         if (!item.filePath || !fs.existsSync(item.filePath)) {
           throw new Error(`Arquivo local de vídeo não encontrado: ${item.filePath}`);
         }
-        inputArgs = ['-re', '-i', item.filePath];
+        inputArgs = ['-re', '-thread_queue_size', '2048', '-i', item.filePath];
       }
 
       const videoBitrate = settings.videoBitrate || '4500k';
@@ -426,21 +429,24 @@ class StreamerEngine {
       const args = [
         ...inputArgs,
         '-c:v', 'libx264',
-        '-preset', 'veryfast',
+        '-preset', 'ultrafast',
+        '-tune', 'zerolatency',
         '-b:v', videoBitrate,
         '-maxrate', videoBitrate,
         '-bufsize', '9000k',
         '-pix_fmt', 'yuv420p',
         '-g', '60',
         '-keyint_min', '60',
+        '-threads', '0',
         '-c:a', 'aac',
         '-b:a', audioBitrate,
-        '-ar', '44100'
+        '-ar', '44100',
+        '-max_muxing_queue_size', '2048'
       ];
 
       let filterSteps = [];
-      // Padroniza a resolução de entrada para Full HD 1080p (evita erros de reinicialização de filtros)
-      filterSteps.push(`[in]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1[v_scaled]`);
+      // Garante dimensões pares (exigência de yuv420p) sem custo de upscaling ou padding pesado em CPU
+      filterSteps.push(`[in]scale=trunc(iw/2)*2:trunc(ih/2)*2:flags=fast_bilinear[v_scaled]`);
       let currentInput = 'v_scaled';
 
       // 1. Logo d'Água (canto inferior esquerdo, sem caixa preta no topo)
@@ -576,14 +582,17 @@ class StreamerEngine {
       const line = chunk.toString();
       // Parse métricas do FFmpeg: frame= 120 fps= 30 q=28.0 size= 1240kB time=00:00:04.00 bitrate=2540.2kbits/s speed=1.00x
       const match = line.match(/fps=\s*([\d.]+).*time=\s*([\d:.]+).*bitrate=\s*([\d.]+kbits\/s)/);
+      const speedMatch = line.match(/speed=\s*([\d.]+x)/);
       if (match) {
         const fps = parseFloat(match[1]);
         const timeStr = match[2];
         const bitrate = match[3];
+        const speed = speedMatch ? speedMatch[1] : '1.00x';
 
         db.updatePlayoutState({
           fps,
           bitrate,
+          speed,
           lastHeartbeat: Date.now()
         });
 
@@ -591,6 +600,7 @@ class StreamerEngine {
           fps,
           time: timeStr,
           bitrate,
+          speed,
           mode: this.currentMode
         });
       } else {
@@ -671,12 +681,18 @@ class StreamerEngine {
         '-i', standbyFile,
         '-c:v', 'libx264',
         '-preset', 'ultrafast',
+        '-tune', 'zerolatency',
         '-b:v', videoBitrate,
+        '-maxrate', videoBitrate,
+        '-bufsize', '9000k',
         '-pix_fmt', 'yuv420p',
         '-g', '60',
+        '-keyint_min', '60',
+        '-threads', '0',
         '-c:a', 'aac',
         '-b:a', audioBitrate,
-        '-ar', '44100'
+        '-ar', '44100',
+        '-max_muxing_queue_size', '2048'
       ];
 
       if (standbyVf.length > 0) {
@@ -710,12 +726,18 @@ class StreamerEngine {
         '-map', '1:a',
         '-c:v', 'libx264',
         '-preset', 'ultrafast',
+        '-tune', 'zerolatency',
         '-b:v', videoBitrate,
+        '-maxrate', videoBitrate,
+        '-bufsize', '9000k',
         '-pix_fmt', 'yuv420p',
         '-g', '60',
+        '-keyint_min', '60',
+        '-threads', '0',
         '-c:a', 'aac',
         '-b:a', audioBitrate,
-        '-ar', '44100'
+        '-ar', '44100',
+        '-max_muxing_queue_size', '2048'
       ];
     }
 
