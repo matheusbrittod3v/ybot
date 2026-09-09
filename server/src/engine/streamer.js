@@ -307,6 +307,10 @@ class StreamerEngine {
         '-ar', '44100'
       ];
 
+      let filterSteps = [];
+      let currentInput = 'in';
+
+      // 1. Logo d'Água (canto inferior esquerdo, sem caixa preta no topo)
       if (settings.enableWatermark) {
         let logoPngPath = '';
         if (settings.customLogoPath && fs.existsSync(settings.customLogoPath)) {
@@ -316,16 +320,43 @@ class StreamerEngine {
           if (fs.existsSync(defaultLogo)) logoPngPath = defaultLogo;
         }
 
-        const rawWatermarkText = settings.watermarkText || 'TV BRAZA';
-        const parts = rawWatermarkText.split(/\s*[-|]\s*/);
-        const mainLabel = (parts[0] || 'TV BRAZA').replace(/'/g, "'\\''");
-
         if (logoPngPath) {
           const escapedLogoPath = logoPngPath.replace(/\\/g, '/').replace(/'/g, "'\\''");
-          args.push('-vf', `movie='${escapedLogoPath}',scale=260:-1[logo];[in][logo]overlay=x=35:y=H-h-35[v1];[v1]drawbox=x=w-320:y=28:w=280:h=46:color=0x000000@0.65:t=fill,drawtext=text='${mainLabel}':fontcolor=0xf59e0b:fontsize=24:x=w-305:y=38,drawbox=x=w-168:y=34:w=2:h=34:color=0xffffff@0.25:t=fill,drawbox=x=w-150:y=45:w=10:h=10:color=0xef4444:t=fill,drawtext=text='AO VIVO':fontcolor=0xffffff:fontsize=17:x=w-132:y=41`);
-        } else {
-          args.push('-vf', `drawbox=x=w-320:y=28:w=280:h=46:color=0x000000@0.65:t=fill,drawtext=text='${mainLabel}':fontcolor=0xf59e0b:fontsize=24:x=w-305:y=38,drawbox=x=w-168:y=34:w=2:h=34:color=0xffffff@0.25:t=fill,drawbox=x=w-150:y=45:w=10:h=10:color=0xef4444:t=fill,drawtext=text='AO VIVO':fontcolor=0xffffff:fontsize=17:x=w-132:y=41`);
+          filterSteps.push(`movie='${escapedLogoPath}',scale=220:-1[logo];[${currentInput}][logo]overlay=x=35:y=H-h-35[v_logo]`);
+          currentInput = 'v_logo';
         }
+      }
+
+      // 2. Banner Animado Popup "A SEGUIR NA GRADE" (exibe a cada X minutos por Y segundos)
+      const enableOverlay = settings.enableScheduleOverlay !== false;
+      if (enableOverlay) {
+        const queue = db.getQueue();
+        const nextItem = queue.find(i => i.id !== item.id && i.status !== 'finished');
+        const nextTitleRaw = nextItem ? (nextItem.liveTitle || nextItem.title) : 'Programação Contínua 24h TV Braza';
+        const cleanNextTitle = nextTitleRaw
+          .substring(0, 55)
+          .replace(/\\/g, '\\\\')
+          .replace(/'/g, "'\\''")
+          .replace(/:/g, '\\:');
+
+        const intervalMins = Number(settings.scheduleOverlayInterval) || 5;
+        const intervalSecs = Math.max(1, intervalMins) * 60;
+        const durationSecs = Number(settings.scheduleOverlayDuration) || 12;
+        const enableExpr = `between(mod(t\\,${intervalSecs})\\,0\\,${durationSecs})`;
+
+        filterSteps.push(`[${currentInput}]drawbox=x=50:y=h-140:w=w-100:h=76:color=0x0b0f19@0.85:t=fill:enable='${enableExpr}'[v_b1]`);
+        filterSteps.push(`[v_b1]drawbox=x=50:y=h-140:w=6:h=76:color=0xf59e0b:t=fill:enable='${enableExpr}'[v_b2]`);
+        filterSteps.push(`[v_b2]drawtext=text='A SEGUIR NA GRADE':fontcolor=0xf59e0b:fontsize=18:x=75:y=h-128:enable='${enableExpr}'[v_h]`);
+        filterSteps.push(`[v_h]drawtext=text='${cleanNextTitle}':fontcolor=0xffffff:fontsize=24:x=75:y=h-98:enable='${enableExpr}'[v_out]`);
+        currentInput = 'v_out';
+      }
+
+      if (filterSteps.length > 0) {
+        let finalVf = filterSteps.join(';');
+        if (!finalVf.includes('[in]')) {
+          finalVf = `[in]${finalVf}`;
+        }
+        args.push('-vf', finalVf);
       }
 
       if (rtmpTarget) {

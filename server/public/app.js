@@ -91,6 +91,11 @@ const elWatermarkLogoPreview = document.getElementById('watermark-logo-preview')
 const elBtnResetLogo = document.getElementById('btn-reset-logo');
 const elWatermarkCustomPanel = document.getElementById('watermark-customization-panel');
 
+// Schedule Overlay / Banner "A SEGUIR"
+const elCfgEnableScheduleOverlay = document.getElementById('cfg-enable-schedule-overlay');
+const elCfgScheduleInterval = document.getElementById('cfg-schedule-interval');
+const elCfgScheduleDuration = document.getElementById('cfg-schedule-duration');
+
 // YouTube Live Metadata Settings
 const elCfgBroadcastVideoId = document.getElementById('cfg-broadcast-video-id');
 const elCfgTitlePrefix = document.getElementById('cfg-title-prefix');
@@ -1361,6 +1366,11 @@ async function openSettingsModal() {
         elWatermarkLogoPreview.style.display = '';
       }
 
+      // Configuração do Banner "A SEGUIR"
+      if (elCfgEnableScheduleOverlay) elCfgEnableScheduleOverlay.checked = s.enableScheduleOverlay !== false;
+      if (elCfgScheduleInterval) elCfgScheduleInterval.value = s.scheduleOverlayInterval || 5;
+      if (elCfgScheduleDuration) elCfgScheduleDuration.value = s.scheduleOverlayDuration || 12;
+
       // Configurações do YouTube Live Metadata
       if (elCfgBroadcastVideoId) elCfgBroadcastVideoId.value = s.youtubeBroadcastVideoId || '';
       if (elCfgTitlePrefix) elCfgTitlePrefix.value = s.defaultLiveTitlePrefix || '';
@@ -1387,6 +1397,9 @@ async function handleSaveSettings(e) {
     watermarkText: elCfgWatermarkText ? elCfgWatermarkText.value.trim() || 'TV BRAZA' : 'TV BRAZA',
     autoDeleteFinished: elCfgAutoDelete.checked,
     autoLoopStandby: elCfgAutoStandby.checked,
+    enableScheduleOverlay: elCfgEnableScheduleOverlay ? elCfgEnableScheduleOverlay.checked : true,
+    scheduleOverlayInterval: elCfgScheduleInterval ? Number(elCfgScheduleInterval.value) || 5 : 5,
+    scheduleOverlayDuration: elCfgScheduleDuration ? Number(elCfgScheduleDuration.value) || 12 : 12,
     youtubeBroadcastVideoId: elCfgBroadcastVideoId ? elCfgBroadcastVideoId.value.trim() : '',
     defaultLiveTitlePrefix: elCfgTitlePrefix ? elCfgTitlePrefix.value : '',
     googleClientId: elCfgGoogleClientId ? elCfgGoogleClientId.value.trim() : '',

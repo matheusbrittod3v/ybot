@@ -552,28 +552,22 @@
                 </label>
               </div>
 
-              <!-- Personalização da Marca d'Água (Logo + Texto) -->
+              <!-- Personalização da Marca d'Água (Logo) -->
               <div class="settings-section-title" style="margin-top: 14px;">
                 <span class="section-icon">🎨</span>
-                <span>MARCA D'ÁGUA & IDENTIDADE VISUAL</span>
+                <span>MARCA D'ÁGUA & LOGOTIPO</span>
               </div>
 
               <div class="form-group-checkbox">
                 <label class="checkbox-label">
                   <input type="checkbox" id="cfg-watermark" checked />
-                  <span>Exibir marca d'água na transmissão (Logo + Texto)</span>
+                  <span>Exibir Logo da Emissora na Transmissão (canto inferior esquerdo)</span>
                 </label>
               </div>
 
               <div class="watermark-customization" id="watermark-customization-panel">
-                <div class="form-group">
-                  <label for="cfg-watermark-text">Texto da Marca d'Água (canto superior direito):</label>
-                  <input type="text" id="cfg-watermark-text" placeholder="Ex: TV BRAZA" />
-                  <small>Nome exibido no topo da tela. O "● AO VIVO" é adicionado automaticamente.</small>
-                </div>
-
                 <div class="form-group" style="margin-bottom: 0;">
-                  <label>Logo da Transmissão (canto inferior esquerdo):</label>
+                  <label>Logo da Transmissão (PNG transparente):</label>
                   <div style="display: flex; gap: 12px; align-items: center;">
                     <div class="logo-preview-box" id="logo-preview-box">
                       <img src="/api/watermark/logo" alt="Logo atual" id="watermark-logo-preview" style="max-width: 120px; max-height: 60px; border-radius: 8px; object-fit: contain;" onerror="this.style.display='none'" />
@@ -594,6 +588,32 @@
                     </div>
                   </div>
                   <small style="margin-top: 6px; display: block;">Recomendado: PNG com fundo transparente (~260px).</small>
+                </div>
+              </div>
+
+              <!-- Vinheta / Banner "A SEGUIR" a cada X minutos -->
+              <div class="settings-section-title" style="margin-top: 18px;">
+                <span class="section-icon">📺</span>
+                <span>BANNER ANIMADO "A SEGUIR" (PROGRAMAÇÃO)</span>
+              </div>
+
+              <div class="form-group-checkbox">
+                <label class="checkbox-label">
+                  <input type="checkbox" id="cfg-enable-schedule-overlay" checked />
+                  <span>Exibir vinheta animada "A SEGUIR" na transmissão periodicamente</span>
+                </label>
+              </div>
+
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="cfg-schedule-interval">Exibir a cada (Minutos):</label>
+                  <input type="number" id="cfg-schedule-interval" min="1" max="60" value="5" />
+                  <small>Intervalo em minutos para exibir o próximo programa na tela.</small>
+                </div>
+                <div class="form-group">
+                  <label for="cfg-schedule-duration">Duração do Banner (Segundos):</label>
+                  <input type="number" id="cfg-schedule-duration" min="3" max="30" value="12" />
+                  <small>Tempo em segundos que o aviso permanece na tela.</small>
                 </div>
               </div>
             </div>

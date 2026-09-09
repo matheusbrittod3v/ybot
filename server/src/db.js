@@ -86,7 +86,7 @@ const DEFAULT_SETTINGS = {
   enableSponsorBlock: true,
   defaultStreamMode: 'direct',
   enableScheduleOverlay: true,
-  scheduleOverlayInterval: 10,
+  scheduleOverlayInterval: 5,
   scheduleOverlayDuration: 12,
   adminPassword: process.env.ADMIN_PASSWORD || 'admin123'
 };
