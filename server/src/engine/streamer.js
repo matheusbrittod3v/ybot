@@ -175,15 +175,24 @@ class StreamerEngine {
     if (!this.shouldRun) return;
 
     const queue = db.getQueue();
-    // Procura primeiro item disponível para transmissão (arquivo pronto ou stream direto)
-    const readyItem = queue.find(i => i.status === 'ready');
+    // Procura primeiro item disponível para transmissão (status ready ou queued)
+    let readyItem = queue.find(i => i.status === 'ready' || i.status === 'queued');
 
-    if (readyItem && ((readyItem.streamMode === 'direct' && readyItem.url) || (readyItem.filePath && fs.existsSync(readyItem.filePath)))) {
+    if (readyItem) {
+      if (readyItem.status === 'queued') {
+        db.updateQueueItem(readyItem.id, {
+          status: 'ready',
+          streamMode: readyItem.filePath ? 'download' : 'direct',
+          downloadProgress: 100,
+          downloadSpeed: '⚡ Stream Direto (Sem Anúncios)'
+        });
+        readyItem.status = 'ready';
+        if (!readyItem.filePath) readyItem.streamMode = 'direct';
+      }
       this.streamVideo(readyItem);
     } else {
-      // Se não há vídeo pronto na fila, entra em tela de Standby contínua e verifica downloads
-      console.log('[Streamer] Nenhum vídeo pronto na fila. Entrando em vinheta Standby TV Braza 24h...');
-      downloader.checkQueue();
+      // Se não há vídeo na fila, entra em tela de Standby contínua
+      console.log('[Streamer] Nenhum vídeo na fila. Entrando em vinheta Standby TV Braza 24h...');
       this.streamStandby();
     }
   }
@@ -313,8 +322,6 @@ class StreamerEngine {
       youtubeUpdater.syncItemMetadata(item).catch(err => {
         console.warn('[Streamer] Erro ao sincronizar metadados no YouTube:', err.message);
       });
-
-      downloader.checkQueue(item.id);
 
       this.spawnFfmpeg(args, (code) => {
         if (this.isReloading) {
@@ -538,12 +545,8 @@ class StreamerEngine {
     this.standbyCheckInterval = setInterval(() => {
       if (this.shouldRun && this.currentMode === 'STANDBY') {
         const queue = db.getQueue();
-        const nextReady = queue.find(i => i.status === 'ready');
-        const isReadyToPlay = nextReady && (
-          (nextReady.streamMode === 'direct' && nextReady.url) ||
-          (nextReady.filePath && fs.existsSync(nextReady.filePath))
-        );
-        if (isReadyToPlay) {
+        const nextReady = queue.find(i => i.status === 'ready' || i.status === 'queued');
+        if (nextReady) {
           clearInterval(this.standbyCheckInterval);
           this.playNextInQueue();
         }

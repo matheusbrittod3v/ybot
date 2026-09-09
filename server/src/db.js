@@ -382,9 +382,10 @@ class Database {
       ...item,
       order: maxOrder + 1,
       createdAt: new Date().toISOString(),
-      status: item.status || 'queued',
-      downloadProgress: item.downloadProgress !== undefined ? item.downloadProgress : 0,
-      downloadSpeed: item.downloadSpeed || '',
+      streamMode: item.streamMode || 'direct',
+      status: item.status || 'ready',
+      downloadProgress: item.downloadProgress !== undefined ? item.downloadProgress : 100,
+      downloadSpeed: item.downloadSpeed || '⚡ Stream Direto (Sem Anúncios)',
       lastPositionSeconds: item.lastPositionSeconds || 0,
       startAtSeconds: item.startAtSeconds || 0,
       filePath: item.filePath || null

@@ -287,21 +287,17 @@ router.post('/queue/quick-add', async (req, res) => {
       customThumbPath: null,
       customThumbUrl: null,
       streamMode: isDirect ? 'direct' : 'download',
-      status: isDirect ? 'ready' : 'queued',
-      downloadProgress: isDirect ? 100 : 0,
-      downloadSpeed: isDirect ? '⚡ Stream Direto (Sem Anúncios)' : '',
+      status: 'ready',
+      downloadProgress: 100,
+      downloadSpeed: '⚡ Stream Direto (Sem Anúncios)',
       filePath: null
     });
 
-    console.log(`[Queue] Vídeo "${newItem.title}" adicionado [Modo: ${isDirect ? '⚡ Stream Direto' : '💾 Download'}].`);
+    console.log(`[Queue] Vídeo "${newItem.title}" adicionado à fila [Modo: ${isDirect ? '⚡ Stream Direto' : '💾 Direct Default'}].`);
 
     // Notifica WebSocket instantaneamente
     downloader.broadcast('download_complete', { item: newItem });
     streamer.broadcast('queue_updated', { queue: db.getQueue() });
-
-    if (!isDirect) {
-      downloader.checkQueue();
-    }
 
     if (streamer.shouldRun) {
       if (streamer.currentMode === 'STANDBY') {
@@ -370,19 +366,15 @@ router.post('/queue/add', async (req, res) => {
       customThumbPath: customThumbPath || null,
       customThumbUrl: customThumbUrl || null,
       streamMode: isDirect ? 'direct' : 'download',
-      status: isDirect ? 'ready' : 'queued',
-      downloadProgress: isDirect ? 100 : 0,
-      downloadSpeed: isDirect ? '⚡ Stream Direto (Sem Anúncios)' : '',
+      status: 'ready',
+      downloadProgress: 100,
+      downloadSpeed: '⚡ Stream Direto (Sem Anúncios)',
       filePath: null
     });
 
     // Notifica WebSocket instantaneamente
     downloader.broadcast('download_complete', { item: newItem });
     streamer.broadcast('queue_updated', { queue: db.getQueue() });
-
-    if (!isDirect) {
-      downloader.checkQueue();
-    }
 
     if (streamer.shouldRun) {
       if (streamer.currentMode === 'STANDBY') {
