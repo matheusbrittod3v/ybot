@@ -28,13 +28,15 @@ export async function ensureStandbyVideo(forceRegenerate = false) {
 
   console.log('[Standby] Gerando vídeo standby HD moderno da TV Braza com música ambiente sem direitos autorais...');
 
-  const musicFile = path.resolve(__dirname, '../../public/assets/standby_music.wav');
+  const musicMp3 = path.resolve(__dirname, '../../public/assets/standby_music.mp3');
+  const musicWav = path.resolve(__dirname, '../../public/assets/standby_music.wav');
+  const musicFile = fs.existsSync(musicMp3) ? musicMp3 : musicWav;
   const genScript = path.resolve(__dirname, '../utils/generate_standby_music.py');
 
   if (!fs.existsSync(musicFile) && fs.existsSync(genScript)) {
     try {
       const { execFileSync } = await import('child_process');
-      execFileSync('python3', [genScript, musicFile]);
+      execFileSync('python3', [genScript, musicWav]);
     } catch (_) {}
   }
 
