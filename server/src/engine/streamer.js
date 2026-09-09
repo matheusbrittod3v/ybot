@@ -23,12 +23,25 @@ function secondsToTimeStr(totalSeconds) {
 }
 
 async function resolveDirectStreams(url) {
-  // 1. Motor Primário Web Resolver (Instantâneo, zero verificação de bot, CDN direta)
+  // 1. Motor Primário via stream_resolver (pytubefix / yt-dlp - GoogleVideo CDN ultra estável)
   try {
-    console.log('[Streamer Direct] Resolvendo fluxo via Web Resolver (SaveTube)...');
+    console.log('[Streamer Direct] Resolvendo fluxo via stream_resolver (GoogleVideo CDN)...');
+    const { stdout } = await execFileAsync('python3', [RESOLVER_SCRIPT, url], { timeout: 25000, input: '' });
+    const data = JSON.parse(stdout.trim());
+    if (data.success && data.videoUrl) {
+      console.log(`[Streamer Direct] Fluxo resolvido via ${data.provider} (${data.resolution}) com sucesso!`);
+      return data;
+    }
+  } catch (err) {
+    console.warn('[Streamer Direct] stream_resolver falhou:', err.message);
+  }
+
+  // 2. Fallback Secundário Web Resolver
+  try {
+    console.log('[Streamer Direct] Tentando fallback via Web Resolver...');
     const webData = await resolveDownloadUrl(url, ['720', '1080', '480', '360']);
     if (webData && webData.downloadUrl) {
-      console.log(`[Streamer Direct] Fluxo Web resolvido em ${webData.quality}p com sucesso!`);
+      console.log(`[Streamer Direct] Fluxo Web resolvido em ${webData.quality}p!`);
       return {
         success: true,
         provider: `WebResolver_${webData.quality}p`,
@@ -39,20 +52,7 @@ async function resolveDirectStreams(url) {
       };
     }
   } catch (err) {
-    console.warn('[Streamer Direct] Web Resolver indisponível:', err.message);
-  }
-
-  // 2. Motor Secundário via pytubefix (VISION_OS / WEB_SAFARI bypass)
-  try {
-    console.log('[Streamer Direct] Tentando resolução via stream_resolver (pytubefix)...');
-    const { stdout } = await execFileAsync('python3', [RESOLVER_SCRIPT, url], { timeout: 25000, input: '' });
-    const data = JSON.parse(stdout.trim());
-    if (data.success && data.videoUrl) {
-      console.log(`[Streamer Direct] Fluxo resolvido via ${data.provider} (${data.resolution})!`);
-      return data;
-    }
-  } catch (err) {
-    console.warn('[Streamer Direct] stream_resolver falhou:', err.message);
+    console.warn('[Streamer Direct] Web Resolver fallback indisponível:', err.message);
   }
 
   return null;

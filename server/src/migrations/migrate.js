@@ -46,7 +46,7 @@ export async function runMigrations({ fresh = false } = {}) {
     const appliedSet = new Set(appliedRows.map(r => r.migration_name));
 
     for (const file of files) {
-      if (appliedSet.has(file)) {
+      if (!fresh && appliedSet.has(file)) {
         console.log(`[Migrations] Ignorando (já aplicada): ${file}`);
         continue;
       }
@@ -54,7 +54,6 @@ export async function runMigrations({ fresh = false } = {}) {
       console.log(`[Migrations] Executando migration: ${file}`);
       const sqlContent = fs.readFileSync(path.join(__dirname, file), 'utf-8');
 
-      // Divide por ponto e vírgula ignorando linhas em branco/comentários
       const statements = sqlContent
         .split(';')
         .map(s => s.trim())
@@ -64,14 +63,31 @@ export async function runMigrations({ fresh = false } = {}) {
         try {
           await connection.query(stmt);
         } catch (err) {
-          // Ignora erro se a coluna já existir no ALTER TABLE
-          if (err.code === 'ER_DUP_FIELDNAME') continue;
+          if (err.code === 'ER_DUP_FIELDNAME' || err.errno === 1060) continue;
           throw err;
         }
       }
 
-      await connection.query('INSERT INTO schema_migrations (migration_name) VALUES (?)', [file]);
+      if (!appliedSet.has(file)) {
+        await connection.query('INSERT INTO schema_migrations (migration_name) VALUES (?)', [file]);
+      }
       console.log(`[Migrations] ✅ Migration concluída: ${file}`);
+    }
+
+    // Garante que todas as colunas adicionais existam no schema, independentemente do histórico
+    const extraColumns = [
+      'ALTER TABLE settings ADD COLUMN enable_schedule_overlay TINYINT(1) DEFAULT 1',
+      'ALTER TABLE settings ADD COLUMN schedule_overlay_interval INT DEFAULT 10',
+      'ALTER TABLE settings ADD COLUMN schedule_overlay_duration INT DEFAULT 12',
+      'ALTER TABLE queue_items ADD COLUMN last_position_seconds INT DEFAULT 0',
+      'ALTER TABLE queue_items ADD COLUMN start_at_seconds INT DEFAULT 0'
+    ];
+    for (const stmt of extraColumns) {
+      try {
+        await connection.query(stmt);
+      } catch (err) {
+        if (err.code === 'ER_DUP_FIELDNAME' || err.errno === 1060) continue;
+      }
     }
 
     console.log('[Migrations] Todas as migrations foram verificadas e aplicadas com sucesso!');
