@@ -344,8 +344,8 @@ class StreamerEngine {
         const durationSecs = Number(settings.scheduleOverlayDuration) || 12;
         const enableExpr = `between(mod(t\\,${intervalSecs})\\,0\\,${durationSecs})`;
 
-        filterSteps.push(`[${currentInput}]drawbox=x=50:y=h-140:w=w-100:h=76:color=0x0b0f19@0.85:t=fill:enable='${enableExpr}'[v_b1]`);
-        filterSteps.push(`[v_b1]drawbox=x=50:y=h-140:w=6:h=76:color=0xf59e0b:t=fill:enable='${enableExpr}'[v_b2]`);
+        filterSteps.push(`[${currentInput}]drawbox=x=50:y=ih-140:w=iw-100:h=76:color=0x0b0f19@0.85:t=fill:enable='${enableExpr}'[v_b1]`);
+        filterSteps.push(`[v_b1]drawbox=x=50:y=ih-140:w=6:h=76:color=0xf59e0b:t=fill:enable='${enableExpr}'[v_b2]`);
         filterSteps.push(`[v_b2]drawtext=text='A SEGUIR NA GRADE':fontcolor=0xf59e0b:fontsize=18:x=75:y=h-128:enable='${enableExpr}'[v_h]`);
         filterSteps.push(`[v_h]drawtext=text='${cleanNextTitle}':fontcolor=0xffffff:fontsize=24:x=75:y=h-98:enable='${enableExpr}'[v_out]`);
         currentInput = 'v_out';
