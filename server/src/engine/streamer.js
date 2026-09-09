@@ -555,17 +555,27 @@ class StreamerEngine {
         '-ar', '44100'
       ];
     } else {
-      // Standby sintético nativo do FFmpeg com tela TV Braza
+      // Standby sintético nativo do FFmpeg com tela HD TV Braza e Música Ambiente
+      const audioExpr = 'aevalsrc=\'0.05*sin(2*PI*220*t)*sin(0.3*PI*t)+0.05*sin(2*PI*277.18*t)+0.04*sin(2*PI*329.63*t)+0.03*sin(2*PI*440*t)+0.03*sin(2*PI*110*t)\':s=44100';
+      const videoFilter = [
+        '[0:v]drawbox=x=0:y=0:w=1920:h=1080:color=0x070a14@1:t=fill[bg]',
+        '[bg]drawbox=x=310:y=210:w=1300:h=660:color=0x0f172a@0.9:t=fill[card]',
+        '[card]drawbox=x=310:y=210:w=1300:h=8:color=0xf59e0b:t=fill[card_border]',
+        '[card_border]drawtext=text=\'TV BRAZA\':fontcolor=0xffffff:fontsize=120:x=(w-text_w)/2:y=320:shadowcolor=0xf59e0b:shadowx=4:shadowy=4[t1]',
+        '[t1]drawtext=text=\'ESTUDIO DE TRANSMISSAO 24H • PROGRAMACAO EM INSTANTES\':fontcolor=0x94a3b8:fontsize=30:x=(w-text_w)/2:y=470[t2]',
+        '[t2]drawbox=x=760:y=560:w=400:h=56:color=0x10b981@0.15:t=fill[tag_bg]',
+        '[tag_bg]drawbox=x=760:y=560:w=400:h=56:color=0x10b981@0.5:t=2[tag_border]',
+        '[tag_border]drawtext=text=\'● SINAL NO AR • 1080p 60FPS\':fontcolor=0x10b981:fontsize=20:x=(w-text_w)/2:y=578[t3]',
+        '[t3]drawtext=text=\'TV Braza Studio 24/7 - Transmissao Continua sem Interrupcao\':fontcolor=0x64748b:fontsize=20:x=(w-text_w)/2:y=760[v]'
+      ].join(';');
+
       args = [
         '-re',
-        '-f', 'lavfi',
-        '-i', 'color=c=0x0b0f19:s=1920x1080:r=30',
-        '-f', 'lavfi',
-        '-i', 'sine=frequency=220',
-        '-filter_complex',
-        `[0:v]drawbox=x=0:y=440:w=1920:h=200:color=0xf59e0b@0.2:t=fill,drawtext=text='TV BRAZA':fontcolor=white:fontsize=100:x=(w-text_w)/2:y=460,drawtext=text='AO VIVO 24H - PROGRAMACAO EM INSTANTES':fontcolor=0x94a3b8:fontsize=34:x=(w-text_w)/2:y=580[v];[1:a]volume=0.03[a]`,
+        '-f', 'lavfi', '-i', 'color=c=0x070a14:s=1920x1080:r=30',
+        '-f', 'lavfi', '-i', audioExpr,
+        '-filter_complex', videoFilter,
         '-map', '[v]',
-        '-map', '[a]',
+        '-map', '1:a',
         '-c:v', 'libx264',
         '-preset', 'ultrafast',
         '-b:v', videoBitrate,

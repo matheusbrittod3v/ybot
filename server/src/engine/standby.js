@@ -17,41 +17,42 @@ export function standbyFileExists() {
  * Cria automaticamente um vídeo standby de alta definição (1080p, 30fps)
  * com a identidade visual da TV Braza caso não exista um arquivo customizado.
  */
-export async function ensureStandbyVideo() {
-  if (standbyFileExists()) {
+export async function ensureStandbyVideo(forceRegenerate = false) {
+  if (standbyFileExists() && !forceRegenerate) {
     return STANDBY_FILE;
   }
 
-  console.log('[Standby] Gerando vídeo standby padrão da TV Braza via FFmpeg...');
+  console.log('[Standby] Gerando vídeo standby HD moderno da TV Braza com música ambiente...');
 
-  return new Promise((resolve, reject) => {
-    // 10-second looping video with modern TV Braza slate:
-    // Dark background #0b0f19, glowing center banner, smooth pulse, ambient soft audio tone
-    const filter = [
-      'color=c=0x0b0f19:s=1920x1080:d=10:r=30[bg]',
-      'testsrc=size=1920x1080:rate=30:duration=10[ts]',
-      '[bg]drawbox=x=0:y=0:w=1920:h=1080:color=0x111827@1:t=fill[base]',
-      '[base]drawbox=x=0:y=440:w=1920:h=200:color=0xf59e0b@0.15:t=fill[accent]',
-      `[accent]drawtext=text='TV BRAZA':fontcolor=0xffffff:fontsize=96:x=(w-text_w)/2:y=460:shadowcolor=0xf59e0b:shadowx=3:shadowy=3[t1]`,
-      `[t1]drawtext=text='PROGRAMACAO EM INSTANTES - TRANSMISSAO 24H':fontcolor=0x94a3b8:fontsize=36:x=(w-text_w)/2:y=580[outv]`
+  return new Promise((resolve) => {
+    // 1. Áudio: Acorde sintetizado relaxante de TV HD (La Maior / A9 ambient pad)
+    const audioExpr = 'aevalsrc=\'0.05*sin(2*PI*220*t)*sin(0.3*PI*t)+0.05*sin(2*PI*277.18*t)+0.04*sin(2*PI*329.63*t)+0.03*sin(2*PI*440*t)+0.03*sin(2*PI*110*t)\':s=44100:d=10';
+
+    // 2. Vídeo: Card escuro futurista com borda neon dourada e sombra, textos elegantes em alta resolução
+    const videoFilter = [
+      '[0:v]drawbox=x=0:y=0:w=1920:h=1080:color=0x070a14@1:t=fill[bg]',
+      '[bg]drawbox=x=310:y=210:w=1300:h=660:color=0x0f172a@0.9:t=fill[card]',
+      '[card]drawbox=x=310:y=210:w=1300:h=8:color=0xf59e0b:t=fill[card_border]',
+      '[card_border]drawtext=text=\'TV BRAZA\':fontcolor=0xffffff:fontsize=120:x=(w-text_w)/2:y=320:shadowcolor=0xf59e0b:shadowx=4:shadowy=4[t1]',
+      '[t1]drawtext=text=\'ESTUDIO DE TRANSMISSAO 24H • PROGRAMACAO EM INSTANTES\':fontcolor=0x94a3b8:fontsize=30:x=(w-text_w)/2:y=470[t2]',
+      '[t2]drawbox=x=760:y=560:w=400:h=56:color=0x10b981@0.15:t=fill[tag_bg]',
+      '[tag_bg]drawbox=x=760:y=560:w=400:h=56:color=0x10b981@0.5:t=2[tag_border]',
+      '[tag_border]drawtext=text=\'● SINAL NO AR • 1080p 60FPS\':fontcolor=0x10b981:fontsize=20:x=(w-text_w)/2:y=578[t3]',
+      '[t3]drawtext=text=\'TV Braza Studio 24/7 - Transmissao Continua sem Interrupcao\':fontcolor=0x64748b:fontsize=20:x=(w-text_w)/2:y=760[outv]'
     ].join(';');
-
-    // Audio: gentle 440Hz harmonic chord at low volume (-30dB)
-    const audioFilter = 'sine=frequency=220:duration=10,volume=0.03';
 
     const args = [
       '-y',
-      '-f', 'lavfi', '-i', `color=c=0x0b0f19:s=1920x1080:d=10:r=30`,
-      '-f', 'lavfi', '-i', `sine=frequency=220:duration=10`,
-      '-filter_complex',
-      `[0:v]drawbox=x=0:y=440:w=1920:h=200:color=0xf59e0b@0.2:t=fill,drawtext=text='TV BRAZA':fontcolor=white:fontsize=100:x=(w-text_w)/2:y=460,drawtext=text='AO VIVO 24H - AGUARDE A PROGRAMACAO':fontcolor=0x94a3b8:fontsize=34:x=(w-text_w)/2:y=580[v];[1:a]volume=0.03[a]`,
-      '-map', '[v]',
-      '-map', '[a]',
+      '-f', 'lavfi', '-i', 'color=c=0x070a14:s=1920x1080:d=10:r=30',
+      '-f', 'lavfi', '-i', audioExpr,
+      '-filter_complex', videoFilter,
+      '-map', '[outv]',
+      '-map', '1:a',
       '-c:v', 'libx264',
       '-preset', 'ultrafast',
       '-pix_fmt', 'yuv420p',
       '-c:a', 'aac',
-      '-b:a', '128k',
+      '-b:a', '160k',
       STANDBY_FILE
     ];
 
@@ -59,16 +60,16 @@ export async function ensureStandbyVideo() {
 
     proc.on('close', (code) => {
       if (code === 0 && standbyFileExists()) {
-        console.log('[Standby] Vídeo padrão gerado com sucesso:', STANDBY_FILE);
+        console.log('[Standby] Vídeo HD com música ambiente gerado com sucesso:', STANDBY_FILE);
         resolve(STANDBY_FILE);
       } else {
-        console.warn(`[Standby] Não foi possível gerar vídeo standby via FFmpeg (code ${code}). O sistema usará fallback sintético direto.`);
+        console.warn(`[Standby] Não foi possível gerar vídeo standby via FFmpeg (código ${code}). Usando fallback sintético.`);
         resolve(null);
       }
     });
 
     proc.on('error', (err) => {
-      console.warn('[Standby] FFmpeg não disponível para gerar standby pré-gravado:', err.message);
+      console.warn('[Standby] Erro ao disparar FFmpeg para standby:', err.message);
       resolve(null);
     });
   });
