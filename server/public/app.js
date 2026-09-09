@@ -392,22 +392,11 @@ async function fetchStatus() {
         elNextChannel.textContent = `Canal: ${data.nextItem.channel || 'Desconhecido'}`;
         elNextDuration.textContent = data.nextItem.durationFormatted || '00:00';
 
-        if (data.nextItem.status === 'ready') {
-          elUpNextStatusBadge.className = 'badge-status ready';
-          elUpNextStatusBadge.textContent = 'PRÉ-BAIXADO (PRONTO)';
-          elDlProgressBar.style.width = '100%';
-          elDlPercent.textContent = '100%';
-          elDlSpeedLabel.textContent = 'Arquivo verificado e pronto para começar sem delay.';
-        } else if (data.nextItem.status === 'downloading') {
-          elUpNextStatusBadge.className = 'badge-status downloading';
-          elUpNextStatusBadge.textContent = `BAIXANDO ${data.nextItem.downloadProgress || 0}%`;
-        } else {
-          elUpNextStatusBadge.className = 'badge-status';
-          elUpNextStatusBadge.textContent = 'AGUARDANDO DOWNLOAD';
-          elDlProgressBar.style.width = '0%';
-          elDlPercent.textContent = '0%';
-          elDlSpeedLabel.textContent = 'O download iniciará automaticamente antes do término do vídeo atual.';
-        }
+        elUpNextStatusBadge.className = 'badge-status ready';
+        elUpNextStatusBadge.textContent = 'PRONTO (STREAM DIRETO ⚡)';
+        elDlProgressBar.style.width = '100%';
+        elDlPercent.textContent = '100%';
+        elDlSpeedLabel.textContent = '⚡ Stream por link sem anúncios pronto para exibição imediata.';
       } else {
         elNextThumb.classList.add('hidden');
         elNextEmptyState.classList.remove('hidden');
@@ -452,21 +441,15 @@ function renderQueue(queue) {
     const row = document.createElement('div');
     row.className = `queue-item ${isPlaying ? 'playing' : ''}`;
 
-    const isDirect = item.streamMode === 'direct';
-    let statusClass = 'queued';
-    let statusText = 'Na Fila';
+    const isDirect = true;
+    let statusClass = 'ready';
+    let statusText = '⚡ Stream Direto';
     if (isPlaying) {
       statusClass = 'playing';
-      statusText = isDirect ? '⚡ No Ar (Stream Direto)' : 'No Ar';
-    } else if (item.status === 'ready') {
-      statusClass = 'ready';
-      statusText = isDirect ? '⚡ Stream Direto' : 'Baixado';
-    } else if (item.status === 'downloading') {
-      statusClass = 'downloading';
-      statusText = `Baixando ${item.downloadProgress || 0}%`;
+      statusText = '⚡ No Ar (Stream Direto)';
     } else if (item.status === 'error') {
       statusClass = 'error';
-      statusText = 'Erro no Download';
+      statusText = 'Erro na Transmissão';
     }
 
     const thumbSrc = item.customThumbUrl || item.thumbnail || 'assets/logo.svg';

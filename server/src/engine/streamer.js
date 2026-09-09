@@ -175,19 +175,20 @@ class StreamerEngine {
     if (!this.shouldRun) return;
 
     const queue = db.getQueue();
-    // Procura primeiro item disponível para transmissão (status ready ou queued)
-    let readyItem = queue.find(i => i.status === 'ready' || i.status === 'queued');
+    // Procura qualquer item na fila que ainda não foi finalizado e não tem erro
+    let readyItem = queue.find(i => i.status !== 'finished' && i.status !== 'error');
 
     if (readyItem) {
-      if (readyItem.status === 'queued') {
+      const isLocalUpload = Boolean(readyItem.filePath && fs.existsSync(readyItem.filePath));
+      if (readyItem.status !== 'ready') {
         db.updateQueueItem(readyItem.id, {
           status: 'ready',
-          streamMode: readyItem.filePath ? 'download' : 'direct',
+          streamMode: isLocalUpload ? 'upload' : 'direct',
           downloadProgress: 100,
-          downloadSpeed: '⚡ Stream Direto (Sem Anúncios)'
+          downloadSpeed: isLocalUpload ? 'Pronto no Disco' : '⚡ Stream Direto (Sem Anúncios)'
         });
         readyItem.status = 'ready';
-        if (!readyItem.filePath) readyItem.streamMode = 'direct';
+        readyItem.streamMode = isLocalUpload ? 'upload' : 'direct';
       }
       this.streamVideo(readyItem);
     } else {
@@ -199,7 +200,8 @@ class StreamerEngine {
 
   async streamVideo(item) {
     this.isResolving = true;
-    const isDirect = item.streamMode === 'direct';
+    const hasLocalFile = Boolean(item.filePath && fs.existsSync(item.filePath));
+    const isDirect = !hasLocalFile || item.streamMode === 'direct';
 
     console.log(`[Streamer] PREPARANDO TRANSMISSÃO: "${item.title}" ${isDirect ? '[Modo: ⚡ Stream Direto (Sem Anúncios)]' : '[Arquivo Local]'}`);
 
@@ -545,7 +547,7 @@ class StreamerEngine {
     this.standbyCheckInterval = setInterval(() => {
       if (this.shouldRun && this.currentMode === 'STANDBY') {
         const queue = db.getQueue();
-        const nextReady = queue.find(i => i.status === 'ready' || i.status === 'queued');
+        const nextReady = queue.find(i => i.status !== 'finished' && i.status !== 'error');
         if (nextReady) {
           clearInterval(this.standbyCheckInterval);
           this.playNextInQueue();

@@ -201,16 +201,16 @@
             <p class="video-channel" id="next-channel">Canal: --</p>
             <div class="up-next-duration">Duração: <strong id="next-duration">00:00</strong></div>
 
-            <!-- Download Progress Bar -->
+            <!-- Stream Monitor Box -->
             <div class="download-monitor-box" id="download-monitor-box">
               <div class="download-monitor-header">
-                <span class="label" id="dl-status-label">PRÉ-DOWNLOAD NO DISCO DA VPS:</span>
-                <span class="percent" id="dl-percent">0%</span>
+                <span class="label" id="dl-status-label">MODO DE TRANSMISSÃO:</span>
+                <span class="percent" id="dl-percent" style="color: #10b981;">⚡ STREAM DIRETO</span>
               </div>
               <div class="progress-bar-bg">
-                <div class="progress-bar-fill download-fill" id="dl-progress-bar" style="width: 0%"></div>
+                <div class="progress-bar-fill download-fill" id="dl-progress-bar" style="width: 100%; background: linear-gradient(90deg, #10b981, #059669);"></div>
               </div>
-              <div class="dl-speed" id="dl-speed-label">Aguardando início...</div>
+              <div class="dl-speed" id="dl-speed-label">⚡ Stream por link sem anúncios pronto para exibição imediata.</div>
             </div>
 
             <div class="smart-save-tag">
@@ -218,7 +218,7 @@
                 <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
                 <polyline points="22 4 12 14.01 9 11.01"></polyline>
               </svg>
-              <span>Economia Ativa: Será baixado com antecedência e tocará automaticamente.</span>
+              <span>⚡ Reprodução Instantânea por Link: Tocará automaticamente sem consumir disco da VPS.</span>
             </div>
           </div>
         </div>
@@ -262,18 +262,11 @@
             </button>
           </div>
 
-          <!-- Modo de Transmissão: Stream Direto Sem Anúncios vs Download -->
-          <div class="stream-mode-selector" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-top: 10px; margin-bottom: 6px; padding: 10px 14px; background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.25); border-radius: 8px;">
-            <div style="display: flex; align-items: center; gap: 16px; flex-wrap: wrap;">
-              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; color: #f3f4f6; font-weight: 600;">
-                <input type="radio" name="playback-mode" value="direct" id="mode-direct-stream" checked style="accent-color: #f59e0b; width: 16px; height: 16px;">
-                <span>⚡ <strong>Stream Direto (Sem Download / Sem Anúncios)</strong></span>
-                <span style="font-size: 11px; background: rgba(16, 185, 129, 0.2); color: #10b981; padding: 2px 7px; border-radius: 4px; border: 1px solid rgba(16, 185, 129, 0.3); font-weight: bold;">Estilo Brave / Toca Imediato</span>
-              </label>
-              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; color: #9ca3af; font-weight: 500;">
-                <input type="radio" name="playback-mode" value="download" id="mode-download-file" style="accent-color: #f59e0b; width: 16px; height: 16px;">
-                <span>💾 Baixar para o Disco (Modo Clássico)</span>
-              </label>
+          <!-- Indicador de Modo de Transmissão Direta -->
+          <div class="stream-mode-selector" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-top: 10px; margin-bottom: 6px; padding: 10px 14px; background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 8px;">
+            <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: #f3f4f6; font-weight: 600;">
+              <span>⚡ <strong>Motor de Streaming Direto via Link (Zero Download)</strong></span>
+              <span style="font-size: 11px; background: rgba(16, 185, 129, 0.2); color: #10b981; padding: 2px 7px; border-radius: 4px; border: 1px solid rgba(16, 185, 129, 0.3); font-weight: bold;">Sem Anúncios / Reprodução Automática</span>
             </div>
             <div style="font-size: 11px; color: #94a3b8; display: flex; align-items: center; gap: 4px;">
               🛡️ <span>Bloqueio nativo de anúncios & patrocínios (SponsorBlock)</span>
