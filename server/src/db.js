@@ -10,6 +10,13 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+function formatMySqlDateTime(dateInput) {
+  if (!dateInput) return null;
+  const d = new Date(dateInput);
+  if (isNaN(d.getTime())) return null;
+  return d.toISOString().slice(0, 19).replace('T', ' ');
+}
+
 function resolveDataDir() {
   const candidates = [
     process.env.DATA_DIR,
@@ -353,8 +360,8 @@ class Database {
         item.downloadSpeed || '⚡ Stream Direto (Sem Anúncios)',
         item.lastPositionSeconds || 0,
         item.startAtSeconds || 0,
-        item.createdAt || new Date().toISOString(),
-        item.finishedAt || null
+        formatMySqlDateTime(item.createdAt) || formatMySqlDateTime(new Date()),
+        formatMySqlDateTime(item.finishedAt)
       ]
     );
   }
@@ -445,7 +452,7 @@ class Database {
             item.title, item.url || '', item.status, item.duration || 0, item.filePath || null,
             item.thumbnail || null, item.customThumbPath || null, item.downloadProgress || 0, item.downloadSpeed || '',
             item.streamMode || 'direct', item.lastPositionSeconds || 0, item.startAtSeconds || 0,
-            item.finishedAt || null, id
+            formatMySqlDateTime(item.finishedAt), id
           ]
         ).catch(err => console.error('[DB MySQL] Erro ao atualizar item da fila:', err.message));
       }
@@ -533,7 +540,7 @@ class Database {
           `INSERT INTO playback_history (id, title, url, duration, stream_mode, thumbnail_url, finished_at)
            VALUES (?, ?, ?, ?, ?, ?, ?)
            ON DUPLICATE KEY UPDATE finished_at = VALUES(finished_at)`,
-          [item.id, item.title, item.url, item.duration || 0, item.streamMode || 'direct', item.thumbnail || '', finishedAt]
+          [item.id, item.title, item.url, item.duration || 0, item.streamMode || 'direct', item.thumbnail || '', formatMySqlDateTime(finishedAt)]
         ).catch(err => console.error('[DB MySQL] Erro ao arquivar histórico:', err.message));
       }
       this.saveJsonBackup();

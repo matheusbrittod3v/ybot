@@ -55,6 +55,31 @@ async function resolveDirectStreams(url) {
     console.warn('[Streamer Direct] Web Resolver fallback indisponível:', err.message);
   }
 
+  // 3. Fallback Terciário via yt-dlp CLI direto
+  try {
+    console.log('[Streamer Direct] Tentando fallback direto via yt-dlp CLI com bypass...');
+    const cookiesPath = path.join(DATA_DIR, 'cookies.txt');
+    const ytArgs = ['--no-playlist', '--extractor-args', 'youtube:player_client=android,web', '-g', '-f', 'b/bestvideo+bestaudio/best', url];
+    if (fs.existsSync(cookiesPath) && fs.statSync(cookiesPath).size > 0) {
+      ytArgs.splice(1, 0, '--cookies', cookiesPath);
+    }
+    const { stdout } = await execFileAsync('yt-dlp', ytArgs, { timeout: 30000 });
+    const lines = stdout.trim().split('\n').map(l => l.trim()).filter(Boolean);
+    if (lines.length > 0) {
+      console.log(`[Streamer Direct] Fluxo resolvido via yt-dlp CLI direto!`);
+      return {
+        success: true,
+        provider: 'yt-dlp_cli_direct',
+        videoUrl: lines[0],
+        audioUrl: lines.length > 1 ? lines[1] : null,
+        isProgressive: lines.length === 1,
+        resolution: '720p'
+      };
+    }
+  } catch (err) {
+    console.warn('[Streamer Direct] Fallback yt-dlp CLI indisponível:', err.message);
+  }
+
   return null;
 }
 
@@ -172,7 +197,7 @@ class StreamerEngine {
   }
 
   async playNextInQueue() {
-    if (!this.shouldRun) return;
+    if (!this.shouldRun || this.isResolving) return;
 
     const queue = db.getQueue();
     // Procura qualquer item na fila que ainda não foi finalizado e não tem erro
@@ -199,6 +224,10 @@ class StreamerEngine {
   }
 
   async streamVideo(item) {
+    if (!item || this.isResolving) return;
+    if (this.currentMode === 'VIDEO' && this.currentItem && this.currentItem.id === item.id && this.ffmpegProc) {
+      return;
+    }
     this.isResolving = true;
     const hasLocalFile = Boolean(item.filePath && fs.existsSync(item.filePath));
     const isDirect = !hasLocalFile || item.streamMode === 'direct';
