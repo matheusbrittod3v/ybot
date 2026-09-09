@@ -69,8 +69,9 @@ class StreamerEngine {
     this.shouldRun = false;
     this.standbyCheckInterval = null;
     this.isReloading = false;
+    this.isResolving = false;
+    this.watchdogInterval = null;
 
-    // Escuta eventos de download concluído para iniciar reprodução se estiver em standby
     downloader.onEvent((event, payload) => {
       if (event === 'download_complete') {
         if (this.shouldRun && this.currentMode === 'STANDBY') {
@@ -79,6 +80,24 @@ class StreamerEngine {
         }
       }
     });
+  }
+
+  startWatchdog() {
+    if (this.watchdogInterval) clearInterval(this.watchdogInterval);
+    this.watchdogInterval = setInterval(() => {
+      if (!this.shouldRun) return;
+      if (!this.ffmpegProc && !this.isResolving) {
+        console.warn('[Streamer Watchdog] ⚠️ FFmpeg inativo detectado! Restaurando vinheta Standby para manter a Live 100% online...');
+        this.streamStandby();
+      }
+    }, 2500);
+  }
+
+  stopWatchdog() {
+    if (this.watchdogInterval) {
+      clearInterval(this.watchdogInterval);
+      this.watchdogInterval = null;
+    }
   }
 
   onEvent(callback) {
@@ -108,8 +127,9 @@ class StreamerEngine {
 
   async start() {
     this.shouldRun = true;
-    console.log('[Streamer] Iniciando Playout 24/7 TV Braza...');
+    console.log('[Streamer] Iniciando Playout 24/7 TV Braza com Failsafe Anti-Queda...');
     await ensureStandbyVideo();
+    this.startWatchdog();
 
     if (!this.getStreamTarget()) {
       try {
@@ -123,6 +143,7 @@ class StreamerEngine {
 
   stop() {
     this.shouldRun = false;
+    this.stopWatchdog();
     this.killProcess();
     this.currentMode = 'STOPPED';
     this.currentItem = null;
@@ -168,200 +189,171 @@ class StreamerEngine {
   }
 
   async streamVideo(item) {
-    this.killProcess();
-    this.currentMode = 'VIDEO';
-    this.currentItem = item;
-
+    this.isResolving = true;
     const isDirect = item.streamMode === 'direct';
 
-    console.log(`[Streamer] INICIANDO NO AR: "${item.title}" ${isDirect ? '[Modo: ⚡ Stream Direto (Sem Anúncios)]' : '[Arquivo Local]'}`);
+    console.log(`[Streamer] PREPARANDO TRANSMISSÃO: "${item.title}" ${isDirect ? '[Modo: ⚡ Stream Direto (Sem Anúncios)]' : '[Arquivo Local]'}`);
 
-    // Garante que o alvo RTMP está configurado ou detecta automaticamente via Google OAuth
-    let rtmpTarget = this.getStreamTarget();
-    if (!rtmpTarget) {
-      console.log('[Streamer] Chave RTMP ausente. Detectando Stream Key automaticamente no YouTube Studio...');
-      await youtubeUpdater.detectAndSaveActiveBroadcast();
-      rtmpTarget = this.getStreamTarget();
+    // Mantém vinheta Standby no ar durante a resolução do link para garantir transmissão RTMP 100% contínua
+    if (!this.ffmpegProc) {
+      this.streamStandby();
     }
 
-    const settings = db.getSettings();
+    try {
+      let rtmpTarget = this.getStreamTarget();
+      if (!rtmpTarget) {
+        console.log('[Streamer] Chave RTMP ausente. Detectando Stream Key automaticamente no YouTube Studio...');
+        await youtubeUpdater.detectAndSaveActiveBroadcast();
+        rtmpTarget = this.getStreamTarget();
+      }
 
-    db.updatePlayoutState({
-      state: 'PLAYING',
-      activeItemId: item.id,
-      startedAt: Date.now(),
-      duration: item.duration || 0,
-      elapsed: 0
-    });
+      const settings = db.getSettings();
+      let inputArgs = [];
+      let pipeSourceProc = null;
 
-    this.broadcast('video_started', { item });
+      if (isDirect) {
+        console.log(`[Streamer] ⚡ Invocando motor de Stream Direto para: ${item.url}`);
+        const streamData = await resolveDirectStreams(item.url);
 
-    // Atualiza automaticamente o título da Live e a Thumbnail no YouTube Studio
-    youtubeUpdater.syncItemMetadata(item).catch(err => {
-      console.warn('[Streamer] Erro ao sincronizar metadados no YouTube:', err.message);
-    });
-
-    // Pede ao Downloader para já ir baixando o PRÓXIMO vídeo da fila se for modo download
-    downloader.checkQueue(item.id);
-
-    const videoBitrate = settings.videoBitrate || '4500k';
-    const audioBitrate = settings.audioBitrate || '160k';
-
-    if (rtmpTarget) {
-      const maskedTarget = rtmpTarget.replace(/live2\/[a-zA-Z0-9_-]+$/, 'live2/****');
-      console.log(`[Streamer] 📡 Destino RTMP ativo configurado: ${maskedTarget}`);
-    } else {
-      console.warn('[Streamer] ⚠️ Chave do YouTube não configurada! Configure a Stream Key no Painel Web ou via Google OAuth.');
-    }
-
-    let inputArgs = [];
-    let pipeSourceProc = null;
-
-    if (isDirect) {
-      console.log(`[Streamer] ⚡ Invocando motor de Stream Direto (sem anúncios / estilo Brave) para: ${item.url}`);
-      const streamData = await resolveDirectStreams(item.url);
-
-      if (streamData && streamData.videoUrl) {
-        console.log(`[Streamer Direct] Fluxos resolvidos via ${streamData.provider} (${streamData.resolution})! Iniciando broadcast...`);
-        const httpOptions = [
-          '-user_agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          '-rw_timeout', '15000000',
-          '-reconnect', '1',
-          '-reconnect_streamed', '1',
-          '-reconnect_delay_max', '5'
-        ];
-        if (streamData.audioUrl && !streamData.isProgressive) {
-          inputArgs = [
-            ...httpOptions,
-            '-i', streamData.videoUrl,
-            ...httpOptions,
-            '-i', streamData.audioUrl,
-            '-map', '0:v:0',
-            '-map', '1:a:0'
+        if (streamData && streamData.videoUrl) {
+          console.log(`[Streamer Direct] Fluxos resolvidos via ${streamData.provider} (${streamData.resolution})! Iniciando broadcast...`);
+          const httpOptions = [
+            '-user_agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            '-rw_timeout', '15000000',
+            '-reconnect', '1',
+            '-reconnect_streamed', '1',
+            '-reconnect_delay_max', '5'
           ];
+          if (streamData.audioUrl && !streamData.isProgressive) {
+            inputArgs = [
+              ...httpOptions,
+              '-i', streamData.videoUrl,
+              ...httpOptions,
+              '-i', streamData.audioUrl,
+              '-map', '0:v:0',
+              '-map', '1:a:0'
+            ];
+          } else {
+            inputArgs = [
+              ...httpOptions,
+              '-i', streamData.videoUrl
+            ];
+          }
         } else {
-          inputArgs = [
-            ...httpOptions,
-            '-i', streamData.videoUrl
-          ];
+          throw new Error('Não foi possível obter links de streaming reproduzíveis para o vídeo');
         }
       } else {
-        console.warn('[Streamer Direct] Usando fallback secundário via yt-dlp android...');
-        const ytdlpArgs = [
-          '--no-playlist',
-          '-f', 'b/best',
-          '--extractor-args', 'youtube:player_client=android',
-          '--no-warnings',
-          '-o', '-'
-        ];
+        if (!item.filePath || !fs.existsSync(item.filePath)) {
+          throw new Error(`Arquivo local de vídeo não encontrado: ${item.filePath}`);
+        }
+        inputArgs = ['-re', '-i', item.filePath];
+      }
 
-        if (settings.enableSponsorBlock !== false) {
-          ytdlpArgs.push('--sponsorblock-remove', 'sponsor,selfpromo');
+      const videoBitrate = settings.videoBitrate || '4500k';
+      const audioBitrate = settings.audioBitrate || '160k';
+
+      const args = [
+        ...inputArgs,
+        '-c:v', 'libx264',
+        '-preset', 'veryfast',
+        '-b:v', videoBitrate,
+        '-maxrate', videoBitrate,
+        '-bufsize', '9000k',
+        '-pix_fmt', 'yuv420p',
+        '-g', '60',
+        '-keyint_min', '60',
+        '-c:a', 'aac',
+        '-b:a', audioBitrate,
+        '-ar', '44100'
+      ];
+
+      if (settings.enableWatermark) {
+        let logoPngPath = '';
+        if (settings.customLogoPath && fs.existsSync(settings.customLogoPath)) {
+          logoPngPath = settings.customLogoPath;
+        } else {
+          const defaultLogo = path.resolve(__dirname, '../../public/assets/logo.png');
+          if (fs.existsSync(defaultLogo)) logoPngPath = defaultLogo;
         }
 
-        const cookiesPath = path.join(DATA_DIR, 'cookies.txt');
-        if (fs.existsSync(cookiesPath) && fs.statSync(cookiesPath).size > 0) {
-          ytdlpArgs.push('--cookies', cookiesPath);
+        const rawWatermarkText = settings.watermarkText || 'TV BRAZA';
+        const parts = rawWatermarkText.split(/\s*[-|]\s*/);
+        const mainLabel = (parts[0] || 'TV BRAZA').replace(/'/g, "'\\''");
+
+        if (logoPngPath) {
+          const escapedLogoPath = logoPngPath.replace(/\\/g, '/').replace(/'/g, "'\\''");
+          args.push('-vf', `movie='${escapedLogoPath}',scale=260:-1[logo];[in][logo]overlay=x=35:y=H-h-35[v1];[v1]drawbox=x=w-320:y=28:w=280:h=46:color=0x000000@0.65:t=fill,drawtext=text='${mainLabel}':fontcolor=0xf59e0b:fontsize=24:x=w-305:y=38,drawbox=x=w-168:y=34:w=2:h=34:color=0xffffff@0.25:t=fill,drawbox=x=w-150:y=45:w=10:h=10:color=0xef4444:t=fill,drawtext=text='AO VIVO':fontcolor=0xffffff:fontsize=17:x=w-132:y=41`);
+        } else {
+          args.push('-vf', `drawbox=x=w-320:y=28:w=280:h=46:color=0x000000@0.65:t=fill,drawtext=text='${mainLabel}':fontcolor=0xf59e0b:fontsize=24:x=w-305:y=38,drawbox=x=w-168:y=34:w=2:h=34:color=0xffffff@0.25:t=fill,drawbox=x=w-150:y=45:w=10:h=10:color=0xef4444:t=fill,drawtext=text='AO VIVO':fontcolor=0xffffff:fontsize=17:x=w-132:y=41`);
+        }
+      }
+
+      if (rtmpTarget) {
+        args.push('-f', 'flv', rtmpTarget);
+      } else {
+        args.push('-f', 'null', '-');
+      }
+
+      // Mata a vinheta Standby imediatamente antes de disparar o FFmpeg do vídeo
+      this.killProcess();
+      this.currentMode = 'VIDEO';
+      this.currentItem = item;
+      this.isResolving = false;
+
+      db.updatePlayoutState({
+        state: 'PLAYING',
+        activeItemId: item.id,
+        startedAt: Date.now(),
+        duration: item.duration || 0,
+        elapsed: 0
+      });
+
+      this.broadcast('video_started', { item });
+
+      youtubeUpdater.syncItemMetadata(item).catch(err => {
+        console.warn('[Streamer] Erro ao sincronizar metadados no YouTube:', err.message);
+      });
+
+      downloader.checkQueue(item.id);
+
+      this.spawnFfmpeg(args, (code) => {
+        if (this.isReloading) {
+          console.log(`[Streamer] Recarregamento ativo. Mantendo item "${item.title}" no ar...`);
+          return;
         }
 
-        ytdlpArgs.push(item.url);
+        if (code === 0 || code === null) {
+          console.log(`[Streamer] VÍDEO CONCLUÍDO COM SUCESSO: "${item.title}". Arquivando e avançando...`);
+          db.archiveFinishedItem(item.id);
+        } else {
+          console.warn(`[Streamer] FFmpeg encerrou prematuramente para "${item.title}" (código ${code}). Marcando erro e avançando...`);
+          db.updateQueueItem(item.id, {
+            status: 'error',
+            error: `Transmissão encerrada (código ${code})`
+          });
+        }
 
-        pipeSourceProc = spawn('yt-dlp', ytdlpArgs);
-        this.pipeProc = pipeSourceProc;
-
-        pipeSourceProc.stderr.on('data', (d) => {
-          const text = d.toString();
-          if (text.includes('ERROR:')) {
-            console.warn(`[Streamer Direct yt-dlp stderr] ${text.trim()}`);
-          }
-        });
-
-        inputArgs = ['-re', '-i', 'pipe:0'];
-      }
-    } else {
-      inputArgs = ['-re', '-i', item.filePath];
-    }
-
-    // Montagem do comando FFmpeg para transmissão profissional contínua
-    const args = [
-      ...inputArgs,
-      '-c:v', 'libx264',
-      '-preset', 'veryfast',
-      '-b:v', videoBitrate,
-      '-maxrate', videoBitrate,
-      '-bufsize', '9000k',
-      '-pix_fmt', 'yuv420p',
-      '-g', '60',
-      '-keyint_min', '60',
-      '-c:a', 'aac',
-      '-b:a', audioBitrate,
-      '-ar', '44100'
-    ];
-
-    // Adiciona marca d'água opcional com logo no canto inferior esquerdo e selo AO VIVO no canto superior direito
-    if (settings.enableWatermark) {
-      // Resolve a logo: customizada (DATA_DIR) → padrão (public/assets)
-      let logoPngPath = '';
-      if (settings.customLogoPath && fs.existsSync(settings.customLogoPath)) {
-        logoPngPath = settings.customLogoPath;
-      } else {
-        const defaultLogo = path.resolve(__dirname, '../../public/assets/logo.png');
-        if (fs.existsSync(defaultLogo)) logoPngPath = defaultLogo;
-      }
-
-      // Texto dinâmico da marca d'água (ex: "TV BRAZA", "MINHA TV", etc)
-      const rawWatermarkText = settings.watermarkText || 'TV BRAZA';
-      // Separa em label principal e sufixo "AO VIVO"
-      const parts = rawWatermarkText.split(/\s*[-|]\s*/);
-      const mainLabel = (parts[0] || 'TV BRAZA').replace(/'/g, "'\\''");
-
-      if (logoPngPath) {
-        const escapedLogoPath = logoPngPath.replace(/\\/g, '/').replace(/'/g, "'\\''");
-        args.push('-vf', `movie='${escapedLogoPath}',scale=260:-1[logo];[in][logo]overlay=x=35:y=H-h-35[v1];[v1]drawbox=x=w-320:y=28:w=280:h=46:color=0x000000@0.65:t=fill,drawtext=text='${mainLabel}':fontcolor=0xf59e0b:fontsize=24:x=w-305:y=38,drawbox=x=w-168:y=34:w=2:h=34:color=0xffffff@0.25:t=fill,drawbox=x=w-150:y=45:w=10:h=10:color=0xef4444:t=fill,drawtext=text='AO VIVO':fontcolor=0xffffff:fontsize=17:x=w-132:y=41`);
-      } else {
-        args.push('-vf', `drawbox=x=w-320:y=28:w=280:h=46:color=0x000000@0.65:t=fill,drawtext=text='${mainLabel}':fontcolor=0xf59e0b:fontsize=24:x=w-305:y=38,drawbox=x=w-168:y=34:w=2:h=34:color=0xffffff@0.25:t=fill,drawbox=x=w-150:y=45:w=10:h=10:color=0xef4444:t=fill,drawtext=text='AO VIVO':fontcolor=0xffffff:fontsize=17:x=w-132:y=41`);
-      }
-    }
-
-    if (rtmpTarget) {
-      args.push('-f', 'flv', rtmpTarget);
-    } else {
-      args.push('-f', 'null', '-');
-    }
-
-    this.spawnFfmpeg(args, (code) => {
-      if (this.isReloading) {
-        console.log(`[Streamer] Recarregamento ativo. Mantendo item "${item.title}" no ar...`);
-        return;
-      }
-
-      if (code === 0 || code === null) {
-        console.log(`[Streamer] VÍDEO CONCLUÍDO COM SUCESSO: "${item.title}". Arquivando e iniciando próximo da fila...`);
-        db.archiveFinishedItem(item.id);
         this.currentItem = null;
         this.playNextInQueue();
-      } else {
-        console.warn(`[Streamer] FFmpeg encerrou prematuramente para "${item.title}" (código ${code}). Marcando erro e avançando...`);
-        db.updateQueueItem(item.id, {
-          status: 'error',
-          error: `Transmissão encerrada (código ${code})`
-        });
-        this.currentItem = null;
-        this.playNextInQueue();
-      }
-    }, pipeSourceProc);
+      }, pipeSourceProc);
 
-    // Se estiver transmitindo para o YouTube, garante a ativação pública da Live no YouTube Studio
-    if (rtmpTarget) {
-      setTimeout(async () => {
-        try {
-          const currentSet = db.getSettings();
-          const broadcastId = currentSet.youtubeBroadcastVideoId;
-          if (broadcastId && this.currentMode === 'VIDEO') {
-            await youtubeUpdater.transitionBroadcastToLive(broadcastId);
-          }
-        } catch (_) {}
-      }, 10000);
+      if (rtmpTarget) {
+        setTimeout(async () => {
+          try {
+            const currentSet = db.getSettings();
+            const broadcastId = currentSet.youtubeBroadcastVideoId;
+            if (broadcastId && this.currentMode === 'VIDEO') {
+              await youtubeUpdater.transitionBroadcastToLive(broadcastId);
+            }
+          } catch (_) {}
+        }, 10000);
+      }
+    } catch (err) {
+      console.error(`[Streamer] Falha ao preparar transmissão de "${item.title}":`, err.message);
+      db.updateQueueItem(item.id, { status: 'error', error: err.message });
+      this.isResolving = false;
+      this.currentItem = null;
+      this.playNextInQueue();
     }
   }
 
