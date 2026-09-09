@@ -36,9 +36,9 @@ def download_video(url, output_path):
             title = yt.title
             print(f"[PytubeDownloader] Conectado com sucesso ({client})! Título: {title}", flush=True)
 
-            # 1. Procurar melhor stream de vídeo (1080p -> 720p -> melhor disponível)
+            # 1. Procurar melhor stream de vídeo (8K -> 4K -> 2K -> 1080p -> 720p -> melhor disponível)
             video_stream = None
-            for res in ['1080p', '720p', '480p']:
+            for res in ['4320p', '2160p', '1440p', '1080p', '720p', '480p']:
                 video_stream = yt.streams.filter(res=res, type='video').first()
                 if video_stream:
                     print(f"[PytubeDownloader] Stream de vídeo encontrada: {res} ({video_stream.mime_type})", flush=True)

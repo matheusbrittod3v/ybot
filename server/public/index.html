@@ -524,21 +524,36 @@
 
               <div class="form-row">
                 <div class="form-group">
-                  <label for="cfg-resolution">Resolução de Saída:</label>
+                  <label for="cfg-resolution">Resolução de Saída (até 8K):</label>
                   <select id="cfg-resolution">
-                    <option value="1080p">1080p (Full HD 1920x1080)</option>
-                    <option value="720p">720p (HD 1280x720)</option>
+                    <option value="8k">8K UHD (7680x4320 - Ultra Broadcast)</option>
+                    <option value="4k">4K UHD (3840x2160 - Alta Resolução)</option>
+                    <option value="1440p">2K QHD (2560x1440 - 1440p Pro)</option>
+                    <option value="1080p" selected>1080p (Full HD 1920x1080 - Padrão YouTube)</option>
+                    <option value="720p">720p (HD 1280x720 - Rápido)</option>
+                    <option value="480p">480p (SD 854x480 - Econômico)</option>
+                    <option value="360p">360p (Baixo Consumo 640x360)</option>
+                    <option value="240p">240p (Mínimo Consumo 426x240)</option>
+                    <option value="native">Nativa / Automática (Mantém original sem reescalar)</option>
                   </select>
                 </div>
 
                 <div class="form-group">
-                  <label for="cfg-bitrate">Bitrate de Vídeo:</label>
+                  <label for="cfg-bitrate">Bitrate de Vídeo (CBR):</label>
                   <select id="cfg-bitrate">
-                    <option value="6800k">6800 kbps (Oficial YouTube 1080p 60fps - Qualidade Máxima)</option>
-                    <option value="6000k">6000 kbps (Alta Qualidade 1080p)</option>
-                    <option value="4500k">4500 kbps (Padrão 1080p 30fps)</option>
-                    <option value="3000k">3000 kbps (Econômico)</option>
-                    <option value="2000k">2000 kbps (VPS Leve 720p)</option>
+                    <option value="60000k">60.000 kbps (8K UHD Máximo)</option>
+                    <option value="40000k">40.000 kbps (8K UHD Padrão)</option>
+                    <option value="30000k">30.000 kbps (4K 2160p 60fps - Máxima Fidelidade)</option>
+                    <option value="20000k">20.000 kbps (4K 2160p Padrão)</option>
+                    <option value="14000k">14.000 kbps (2K QHD 1440p 60fps)</option>
+                    <option value="9000k">9.000 kbps (1080p 60fps - Máximo YouTube)</option>
+                    <option value="6800k" selected>6.800 kbps (Oficial YouTube 1080p 60fps - Recomendado)</option>
+                    <option value="6000k">6.000 kbps (Alta Qualidade 1080p)</option>
+                    <option value="4500k">4.500 kbps (Padrão 1080p 30fps)</option>
+                    <option value="3000k">3.000 kbps (Econômico 720p)</option>
+                    <option value="2000k">2.000 kbps (VPS Leve 720p)</option>
+                    <option value="1200k">1.200 kbps (Econômico 480p)</option>
+                    <option value="800k">800 kbps (Ultra Econômico 360p)</option>
                   </select>
                 </div>
               </div>

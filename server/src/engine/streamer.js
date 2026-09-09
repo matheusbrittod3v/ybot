@@ -61,12 +61,27 @@ function sanitizeDrawtext(str) {
     .trim();
 }
 
+export const RESOLUTION_CONFIGS = {
+  '8k': { width: 7680, height: 4320, label: '8K UHD (7680x4320)', scaleFactor: 4.0 },
+  '4320p': { width: 7680, height: 4320, label: '8K UHD (7680x4320)', scaleFactor: 4.0 },
+  '4k': { width: 3840, height: 2160, label: '4K UHD (3840x2160)', scaleFactor: 2.0 },
+  '2160p': { width: 3840, height: 2160, label: '4K UHD (3840x2160)', scaleFactor: 2.0 },
+  '2k': { width: 2560, height: 1440, label: '2K QHD (2560x1440)', scaleFactor: 1.33 },
+  '1440p': { width: 2560, height: 1440, label: '2K QHD (2560x1440)', scaleFactor: 1.33 },
+  '1080p': { width: 1920, height: 1080, label: 'Full HD (1920x1080)', scaleFactor: 1.0 },
+  '720p': { width: 1280, height: 720, label: 'HD (1280x720)', scaleFactor: 0.67 },
+  '480p': { width: 854, height: 480, label: 'SD (854x480)', scaleFactor: 0.45 },
+  '360p': { width: 640, height: 360, label: '360p (640x360)', scaleFactor: 0.33 },
+  '240p': { width: 426, height: 240, label: '240p (426x240)', scaleFactor: 0.22 },
+  'native': { width: null, height: null, label: 'Nativa / Automática', scaleFactor: 1.0 }
+};
+
 /**
  * Constrói a cadeia de filtros para a vinheta animada "A SEGUIR NA GRADE".
- * Desliza suavemente de baixo para cima (slide-up de 0.8s), repousa na tela e desliza de volta para baixo.
- * Todas as coordenadas são estritamente positivas (>= 0) e limitadas para eliminar erros de reinit de filtros.
+ * Desliza suavemente de baixo para cima, com dimensões adaptadas proporcionalmente
+ * para qualquer resolução selecionada (de 240p até 8K UHD).
  */
-function buildScheduleOverlaySteps(currentInput, settings, currentItemId = null) {
+function buildScheduleOverlaySteps(currentInput, settings, currentItemId = null, resConfig = null) {
   const enableOverlay = settings.enableScheduleOverlay !== false;
   if (!enableOverlay) return [];
 
@@ -80,23 +95,33 @@ function buildScheduleOverlaySteps(currentInput, settings, currentItemId = null)
 
   const intervalMins = Number(settings.scheduleOverlayInterval) || 5;
   const intervalSecs = Math.max(1, intervalMins) * 60;
-  // Permite durações maiores que 30s (ex: 45s, 60s, 120s, até o limite do intervalo configurado)
   const maxAllowedDuration = Math.max(10, intervalSecs - 5);
   const rawDuration = Number(settings.scheduleOverlayDuration) || 12;
   const durationSecs = Math.max(5, Math.min(maxAllowedDuration, rawDuration));
-  const startOffset = 15; // Exibe aos 15 segundos do vídeo e depois a cada ciclo
+  const startOffset = 15;
 
   const enableExpr = `between(mod(t\\,${intervalSecs})\\,${startOffset}\\,${startOffset + durationSecs})`;
 
+  const scaleFactor = (resConfig && resConfig.scaleFactor) ? resConfig.scaleFactor : 1.0;
+  const cardHeight = Math.round(Math.max(42, Math.min(300, 76 * scaleFactor)));
+  const cardMarginX = Math.round(Math.max(20, Math.min(200, 50 * scaleFactor)));
+  const cardOffsetY = Math.round(Math.max(80, Math.min(560, 140 * scaleFactor)));
+  const barWidth = Math.round(Math.max(4, Math.min(24, 6 * scaleFactor)));
+  const titleFontSize = Math.round(Math.max(14, Math.min(96, 24 * scaleFactor)));
+  const labelFontSize = Math.round(Math.max(11, Math.min(72, 18 * scaleFactor)));
+  const textPaddingX = cardMarginX + Math.round(Math.max(15, Math.min(100, 26 * scaleFactor)));
+  const labelOffsetY = cardOffsetY - Math.round(Math.max(8, Math.min(56, 14 * scaleFactor)));
+  const titleOffsetY = cardOffsetY - Math.round(Math.max(26, Math.min(170, 44 * scaleFactor)));
+
   return [
-    // 1. Card backdrop translúcido moderno
-    `[${currentInput}]drawbox=x=50:y=ih-140:w=iw-100:h=76:color=0x0b0f19@0.92:t=fill:enable='${enableExpr}'[v_b1]`,
+    // 1. Card backdrop translúcido moderno proporcional
+    `[${currentInput}]drawbox=x=${cardMarginX}:y=ih-${cardOffsetY}:w=iw-${cardMarginX * 2}:h=${cardHeight}:color=0x0b0f19@0.92:t=fill:enable='${enableExpr}'[v_b1]`,
     // 2. Barra de destaque neon âmbar na borda esquerda
-    `[v_b1]drawbox=x=50:y=ih-140:w=6:h=76:color=0xf59e0b:t=fill:enable='${enableExpr}'[v_b2]`,
+    `[v_b1]drawbox=x=${cardMarginX}:y=ih-${cardOffsetY}:w=${barWidth}:h=${cardHeight}:color=0xf59e0b:t=fill:enable='${enableExpr}'[v_b2]`,
     // 3. Rótulo da vinheta
-    `[v_b2]drawtext=text='● A SEGUIR NA GRADE':fontsize=18:fontcolor=0xf59e0b:x=76:y=main_h-126${fontOpt}:enable='${enableExpr}'[v_txt1]`,
-    // 4. Título do próximo programa (sem rótulo final para saída direta ao encoder)
-    `[v_txt1]drawtext=text='${cleanNextTitle}':fontsize=24:fontcolor=0xffffff:x=76:y=main_h-96${fontOpt}:enable='${enableExpr}'`
+    `[v_b2]drawtext=text='● A SEGUIR NA GRADE':fontsize=${labelFontSize}:fontcolor=0xf59e0b:x=${textPaddingX}:y=main_h-${labelOffsetY}${fontOpt}:enable='${enableExpr}'[v_txt1]`,
+    // 4. Título do próximo programa
+    `[v_txt1]drawtext=text='${cleanNextTitle}':fontsize=${titleFontSize}:fontcolor=0xffffff:x=${textPaddingX}:y=main_h-${titleOffsetY}${fontOpt}:enable='${enableExpr}'`
   ];
 }
 
@@ -447,11 +472,19 @@ class StreamerEngine {
       ];
 
       let filterSteps = [];
-      // Garante dimensões pares (exigência de yuv420p) sem custo de upscaling ou padding pesado em CPU
-      filterSteps.push(`[in]scale=trunc(iw/2)*2:trunc(ih/2)*2:flags=fast_bilinear[v_scaled]`);
+      const targetResKey = String(settings.resolution || '1080p').toLowerCase().trim();
+      const resConfig = RESOLUTION_CONFIGS[targetResKey] || RESOLUTION_CONFIGS['1080p'];
+
+      if (resConfig && resConfig.width) {
+        // Escala para a resolução solicitada (até 8K 7680x4320) mantendo proporção e altura par (-2)
+        filterSteps.push(`[in]scale=${resConfig.width}:-2:flags=fast_bilinear[v_scaled]`);
+      } else {
+        // Nativa: garante que dimensões sejam pares para o codec x264 sem alterar a escala
+        filterSteps.push(`[in]scale=trunc(iw/2)*2:trunc(ih/2)*2:flags=fast_bilinear[v_scaled]`);
+      }
       let currentInput = 'v_scaled';
 
-      // 1. Logo d'Água (canto inferior esquerdo, sem caixa preta no topo)
+      // 1. Logo d'Água (canto inferior esquerdo, proporcional à resolução)
       if (settings.enableWatermark) {
         let logoPngPath = '';
         if (settings.customLogoPath && fs.existsSync(settings.customLogoPath)) {
@@ -463,13 +496,16 @@ class StreamerEngine {
 
         if (logoPngPath) {
           const escapedLogoPath = logoPngPath.replace(/\\/g, '/').replace(/'/g, "'\\''");
-          filterSteps.push(`movie='${escapedLogoPath}',scale=220:-1[logo];[${currentInput}][logo]overlay=x=35:y=H-h-35[v_wm]`);
+          const logoScaleFactor = (resConfig && resConfig.scaleFactor) ? resConfig.scaleFactor : 1.0;
+          const logoWidth = Math.round(Math.max(100, Math.min(880, 220 * logoScaleFactor)));
+          const margin = Math.round(Math.max(15, Math.min(140, 35 * logoScaleFactor)));
+          filterSteps.push(`movie='${escapedLogoPath}',scale=${logoWidth}:-1[logo];[${currentInput}][logo]overlay=x=${margin}:y=H-h-${margin}[v_wm]`);
           currentInput = 'v_wm';
         }
       }
 
-      // 2. Banner Animado Popup "A SEGUIR NA GRADE" (exibe periodicamente a cada X minutos)
-      const overlaySteps = buildScheduleOverlaySteps(currentInput, settings, item.id);
+      // 2. Banner Animado Popup "A SEGUIR NA GRADE" (proporcional à resolução)
+      const overlaySteps = buildScheduleOverlaySteps(currentInput, settings, item.id, resConfig);
       if (overlaySteps.length > 0) {
         filterSteps.push(...overlaySteps);
       } else {
@@ -667,15 +703,24 @@ class StreamerEngine {
     const audioBitrate = settings.audioBitrate || '160k';
     const numericBitrate = parseInt(videoBitrate, 10) || 6800;
     const bufSize = `${numericBitrate * 2}k`;
+    const targetResKey = String(settings.resolution || '1080p').toLowerCase().trim();
+    const resConfig = RESOLUTION_CONFIGS[targetResKey] || RESOLUTION_CONFIGS['1080p'];
 
     let args = [];
     const standbyFile = getStandbyFilePath();
 
     if (standbyFileExists()) {
       let standbyVf = [];
-      const overlaySteps = buildScheduleOverlaySteps('in', settings, null);
+      let currentStandbyInput = 'in';
+      if (resConfig && resConfig.width) {
+        standbyVf.push(`[in]scale=${resConfig.width}:-2:flags=fast_bilinear[v_scaled]`);
+        currentStandbyInput = 'v_scaled';
+      }
+      const overlaySteps = buildScheduleOverlaySteps(currentStandbyInput, settings, null, resConfig);
       if (overlaySteps.length > 0) {
         standbyVf.push(...overlaySteps);
+      } else if (currentStandbyInput === 'v_scaled') {
+        standbyVf[standbyVf.length - 1] = standbyVf[standbyVf.length - 1].replace(/\[[^\]]+\]$/, '');
       }
 
       // Transmite o vídeo de standby em loop contínuo

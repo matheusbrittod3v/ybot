@@ -18,8 +18,11 @@ def resolve_stream(url):
         for client in clients:
             try:
                 yt = YouTube(url, client=client)
-                # Tenta 1080p -> 720p -> melhor disponível
-                video = (yt.streams.filter(res='1080p', type='video').first() or 
+                # Prioriza resoluções ultra altas até 8K -> 4K -> 2K -> 1080p -> melhor disponível
+                video = (yt.streams.filter(res='4320p', type='video').first() or
+                         yt.streams.filter(res='2160p', type='video').first() or
+                         yt.streams.filter(res='1440p', type='video').first() or
+                         yt.streams.filter(res='1080p', type='video').first() or 
                          yt.streams.filter(res='720p', type='video').first() or 
                          yt.streams.filter(type='video').order_by('resolution').desc().first() or 
                          yt.streams.get_highest_resolution())
@@ -41,14 +44,14 @@ def resolve_stream(url):
     except Exception:
         pass
 
-    # 2. Fallback via yt-dlp usando cliente android
+    # 2. Fallback via yt-dlp usando cliente android (até 8K / 4K / melhor qualidade)
     try:
         cmd = [
             'yt-dlp',
             '--no-playlist',
             '--extractor-args', 'youtube:player_client=android',
             '-g',
-            '-f', 'b/best',
+            '-f', 'bv*+ba/b',
             url
         ]
         res = subprocess.run(cmd, capture_output=True, text=True, timeout=12)
@@ -61,7 +64,7 @@ def resolve_stream(url):
                 'videoUrl': urls[0],
                 'audioUrl': urls[1] if len(urls) > 1 else None,
                 'isProgressive': len(urls) == 1,
-                'resolution': '720p'
+                'resolution': 'best'
             }
     except Exception:
         pass

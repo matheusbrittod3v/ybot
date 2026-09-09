@@ -20,6 +20,7 @@ class DownloaderEngine {
     this.watchdogTimer = setInterval(() => {
       this.checkQueue();
     }, 10000);
+    if (this.watchdogTimer?.unref) this.watchdogTimer.unref();
   }
 
   onEvent(callback) {
