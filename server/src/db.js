@@ -303,19 +303,21 @@ class Database {
   }
 
   mapRowToQueueItem(r) {
+    const isFinished = r.status === 'finished';
+    const isPlaying = r.status === 'playing';
     return {
       id: r.id,
       order: r.order_index,
       title: r.title,
       url: r.url,
       duration: Number(r.duration) || 0,
-      status: r.status,
+      status: isFinished ? 'finished' : (isPlaying ? 'playing' : 'ready'),
       streamMode: r.stream_mode || 'direct',
       filePath: r.file_path || null,
       thumbnail: r.thumbnail_url || null,
       customThumbPath: r.custom_thumb_path || null,
-      downloadProgress: Number(r.download_progress) || 0,
-      downloadSpeed: r.download_speed || '',
+      downloadProgress: 100,
+      downloadSpeed: '⚡ Stream Direto (Sem Anúncios)',
       lastPositionSeconds: Number(r.last_position_seconds) || 0,
       startAtSeconds: Number(r.start_at_seconds) || 0,
       createdAt: r.created_at || '',

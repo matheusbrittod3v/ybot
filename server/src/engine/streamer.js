@@ -115,7 +115,23 @@ class StreamerEngine {
         console.warn('[Streamer Watchdog] ⚠️ FFmpeg inativo detectado! Restaurando vinheta Standby para manter a Live 100% online...');
         this.streamStandby();
       }
-    }, 2500);
+
+      // Auto-recuperação de vídeos travados com erro na fila
+      if (this.currentMode === 'STANDBY' && !this.isResolving) {
+        const queue = db.getQueue();
+        const errorItem = queue.find(i => i.status === 'error');
+        if (errorItem) {
+          console.log(`[Streamer Watchdog] 🔄 Auto-recuperação ativada! Destravando vídeo com erro: "${errorItem.title}"`);
+          db.updateQueueItem(errorItem.id, {
+            status: 'ready',
+            error: null,
+            downloadProgress: 100,
+            downloadSpeed: '⚡ Stream Direto (Sem Anúncios)'
+          });
+          setTimeout(() => this.playNextInQueue(), 500);
+        }
+      }
+    }, 4000);
   }
 
   stopWatchdog() {
@@ -200,8 +216,24 @@ class StreamerEngine {
     if (!this.shouldRun || this.isResolving) return;
 
     const queue = db.getQueue();
-    // Procura qualquer item na fila que ainda não foi finalizado e não tem erro
+    // 1. Procura qualquer item na fila que ainda não foi finalizado e não tem erro
     let readyItem = queue.find(i => i.status !== 'finished' && i.status !== 'error');
+
+    // 2. Se todos estiverem marcados com erro, pega o primeiro item com erro para retentar automaticamente!
+    if (!readyItem) {
+      const errorItem = queue.find(i => i.status === 'error');
+      if (errorItem) {
+        console.log(`[Streamer] 🔄 Auto-retentando transmissão de vídeo com erro prévio: "${errorItem.title}"`);
+        db.updateQueueItem(errorItem.id, {
+          status: 'ready',
+          error: null,
+          downloadProgress: 100,
+          downloadSpeed: '⚡ Stream Direto (Sem Anúncios)'
+        });
+        errorItem.status = 'ready';
+        readyItem = errorItem;
+      }
+    }
 
     if (readyItem) {
       const isLocalUpload = Boolean(readyItem.filePath && fs.existsSync(readyItem.filePath));
