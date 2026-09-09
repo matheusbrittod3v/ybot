@@ -30,6 +30,80 @@ function secondsToTimeStr(totalSeconds) {
   return [hrs, mins, secs].map(v => String(v).padStart(2, '0')).join(':');
 }
 
+function getSystemFontOption() {
+  const candidates = [
+    '/usr/share/fonts/truetype/freefont/FreeSansBold.ttf',
+    '/usr/share/fonts/truetype/freefont/FreeSans.ttf',
+    '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+    '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+    '/System/Library/Fonts/Helvetica.ttc',
+    '/System/Library/Fonts/Supplemental/Arial.ttf'
+  ];
+  for (const c of candidates) {
+    if (fs.existsSync(c)) {
+      return `:fontfile='${c}'`;
+    }
+  }
+  return '';
+}
+
+function sanitizeDrawtext(str) {
+  if (!str) return '';
+  return str
+    .substring(0, 55)
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "'\\''")
+    .replace(/:/g, '\\:')
+    .replace(/%/g, '%%')
+    .replace(/\[/g, '\\[')
+    .replace(/\]/g, '\\]')
+    .replace(/;/g, '\\;')
+    .trim();
+}
+
+/**
+ * Constrói a cadeia de filtros para a vinheta animada "A SEGUIR NA GRADE".
+ * Desliza suavemente da esquerda (slide-in de 0.8s), repousa na tela e desliza para fora (slide-out de 0.8s).
+ */
+function buildScheduleOverlaySteps(currentInput, settings, currentItemId = null) {
+  const enableOverlay = settings.enableScheduleOverlay !== false;
+  if (!enableOverlay) return [];
+
+  const queue = db.getQueue();
+  const nextItem = queue.find(i => (!currentItemId || i.id !== currentItemId) && i.status !== 'finished' && i.status !== 'error')
+                || queue.find(i => (!currentItemId || i.id !== currentItemId) && i.status !== 'finished');
+
+  const nextTitleRaw = nextItem ? (nextItem.liveTitle || nextItem.title) : 'Programação Contínua 24h TV Braza';
+  const cleanNextTitle = sanitizeDrawtext(nextTitleRaw);
+  const fontOpt = getSystemFontOption();
+
+  const intervalMins = Number(settings.scheduleOverlayInterval) || 5;
+  const intervalSecs = Math.max(1, intervalMins) * 60;
+  const durationSecs = Math.max(5, Math.min(60, Number(settings.scheduleOverlayDuration) || 12));
+  const startOffset = 15; // Exibe aos 15 segundos do vídeo e depois a cada ciclo
+  const animTime = 0.8;   // 0.8s para slide-in e slide-out
+
+  const enableExpr = `between(mod(t\\,${intervalSecs})\\,${startOffset}\\,${startOffset + durationSecs})`;
+  const cycleVal = `(mod(t\\,${intervalSecs})-${startOffset})`;
+
+  // Animação horizontal suave (x):
+  // Desliza da esquerda: -1000 -> 50 em 0.8s
+  // Permanece em 50
+  // Desliza de volta para a esquerda: 50 -> -1000 nos últimos 0.8s
+  const xExpr = `if(lt(${cycleVal}\\,${animTime})\\,-1000+1050*(${cycleVal}/${animTime})\\,if(gt(${cycleVal}\\,${durationSecs}-${animTime})\\,50-1050*((${cycleVal}-(${durationSecs}-${animTime}))/${animTime})\\,50))`;
+
+  return [
+    // 1. Card backdrop translúcido moderno
+    `[${currentInput}]drawbox=x='${xExpr}':y=ih-140:w=iw-100:h=78:color=0x0b0f19@0.92:t=fill:enable='${enableExpr}'[v_b1]`,
+    // 2. Barra de destaque neon âmbar na borda esquerda
+    `[v_b1]drawbox=x='${xExpr}':y=ih-140:w=6:h=78:color=0xf59e0b:t=fill:enable='${enableExpr}'[v_b2]`,
+    // 3. Rótulo da vinheta
+    `[v_b2]drawtext=text='● A SEGUIR NA GRADE':fontsize=18:fontcolor=0xf59e0b:x='${xExpr}+28':y=main_h-126${fontOpt}:enable='${enableExpr}'[v_txt1]`,
+    // 4. Título do próximo programa (sem rótulo final para saída direta)
+    `[v_txt1]drawtext=text='${cleanNextTitle}':fontsize=24:fontcolor=0xffffff:x='${xExpr}+28':y=main_h-96${fontOpt}:enable='${enableExpr}'`
+  ];
+}
+
 async function resolveDirectStreams(url) {
   // 1. Motor Primário via stream_resolver (pytubefix / yt-dlp - GoogleVideo CDN ultra estável)
   try {
@@ -383,38 +457,23 @@ class StreamerEngine {
 
         if (logoPngPath) {
           const escapedLogoPath = logoPngPath.replace(/\\/g, '/').replace(/'/g, "'\\''");
-          filterSteps.push(`movie='${escapedLogoPath}',scale=220:-1[logo];[${currentInput}][logo]overlay=x=35:y=H-h-35[v_logo]`);
-          currentInput = 'v_logo';
+          filterSteps.push(`movie='${escapedLogoPath}',scale=220:-1[logo];[${currentInput}][logo]overlay=x=35:y=H-h-35[v_wm]`);
+          currentInput = 'v_wm';
         }
       }
 
-      // 2. Banner Animado Popup "A SEGUIR NA GRADE" (exibe a cada X minutos por Y segundos)
-      const enableOverlay = settings.enableScheduleOverlay !== false;
-      if (enableOverlay) {
-        const queue = db.getQueue();
-        const nextItem = queue.find(i => i.id !== item.id && i.status !== 'finished');
-        const nextTitleRaw = nextItem ? (nextItem.liveTitle || nextItem.title) : 'Programação Contínua 24h TV Braza';
-        const cleanNextTitle = nextTitleRaw
-          .substring(0, 55)
-          .replace(/\\/g, '\\\\')
-          .replace(/'/g, "'\\''")
-          .replace(/:/g, '\\:');
-
-        const intervalMins = Number(settings.scheduleOverlayInterval) || 5;
-        const intervalSecs = Math.max(1, intervalMins) * 60;
-        const durationSecs = Number(settings.scheduleOverlayDuration) || 12;
-        const enableExpr = `between(mod(t\\,${intervalSecs})\\,0\\,${durationSecs})`;
-
-        filterSteps.push(`[${currentInput}]drawbox=x=50:y=ih-140:w=iw-100:h=76:color=0x0b0f19@0.85:t=fill:enable='${enableExpr}'[v_b1]`);
-        filterSteps.push(`[v_b1]drawbox=x=50:y=ih-140:w=6:h=76:color=0xf59e0b:t=fill:enable='${enableExpr}'[v_b2]`);
-        filterSteps.push(`[v_b2]drawtext=text='A SEGUIR NA GRADE':fontcolor=0xf59e0b:fontsize=18:x=75:y=h-128:enable='${enableExpr}'[v_h]`);
-        filterSteps.push(`[v_h]drawtext=text='${cleanNextTitle}':fontcolor=0xffffff:fontsize=24:x=75:y=h-98:enable='${enableExpr}'[v_out]`);
-        currentInput = 'v_out';
+      // 2. Banner Animado Popup "A SEGUIR NA GRADE" (exibe periodicamente a cada X minutos)
+      const overlaySteps = buildScheduleOverlaySteps(currentInput, settings, item.id);
+      if (overlaySteps.length > 0) {
+        filterSteps.push(...overlaySteps);
+      } else if (currentInput !== 'in') {
+        // Se só havia watermark, remove o rótulo [v_wm] do final para não deixar saída desconectada
+        filterSteps[filterSteps.length - 1] = filterSteps[filterSteps.length - 1].replace(/\[v_wm\]$/, '');
       }
 
       if (filterSteps.length > 0) {
         let finalVf = filterSteps.join(';');
-        if (!finalVf.includes('[in]')) {
+        if (!finalVf.startsWith('[in]')) {
           finalVf = `[in]${finalVf}`;
         }
         args.push('-vf', finalVf);
@@ -601,6 +660,12 @@ class StreamerEngine {
     const standbyFile = getStandbyFilePath();
 
     if (standbyFileExists()) {
+      let standbyVf = [];
+      const overlaySteps = buildScheduleOverlaySteps('in', settings, null);
+      if (overlaySteps.length > 0) {
+        standbyVf.push(...overlaySteps);
+      }
+
       // Transmite o vídeo de standby em loop contínuo
       args = [
         '-stream_loop', '-1',
@@ -615,6 +680,14 @@ class StreamerEngine {
         '-b:a', audioBitrate,
         '-ar', '44100'
       ];
+
+      if (standbyVf.length > 0) {
+        let finalStandbyVf = standbyVf.join(';');
+        if (!finalStandbyVf.startsWith('[in]')) {
+          finalStandbyVf = `[in]${finalStandbyVf}`;
+        }
+        args.push('-vf', finalStandbyVf);
+      }
     } else {
       // Standby sintético nativo do FFmpeg com tela HD TV Braza e Música Ambiente
       const audioExpr = 'aevalsrc=\'0.05*sin(2*PI*220*t)*sin(0.3*PI*t)+0.05*sin(2*PI*277.18*t)+0.04*sin(2*PI*329.63*t)+0.03*sin(2*PI*440*t)+0.03*sin(2*PI*110*t)\':s=44100';
