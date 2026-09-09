@@ -101,6 +101,90 @@ const uploadVideo = multer({
   }
 });
 
+// Multer para upload de logo da marca d'água
+const logoStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    try {
+      ensureDirectories();
+      cb(null, DATA_DIR);
+    } catch (err) {
+      cb(err);
+    }
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase() || '.png';
+    cb(null, `watermark_logo${ext}`);
+  }
+});
+
+const uploadLogo = multer({
+  storage: logoStorage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB máximo
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Apenas arquivos de imagem são permitidos (PNG, JPG, WebP, SVG)'));
+    }
+  }
+});
+
+// Upload de Logo personalizada para marca d'água na transmissão
+router.post('/watermark/logo', uploadLogo.single('logo'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ success: false, error: 'Nenhum arquivo de imagem enviado' });
+  }
+
+  // Atualiza settings com o caminho da logo customizada
+  const logoPath = req.file.path;
+  db.updateSettings({ customLogoPath: logoPath });
+
+  // Aplica a nova logo em tempo real na transmissão ativa
+  streamer.reloadCurrentStream();
+
+  res.json({
+    success: true,
+    logoPath,
+    filename: req.file.filename,
+    size: req.file.size,
+    message: 'Logo atualizada com sucesso em tempo real na transmissão!'
+  });
+});
+
+// Obter a logo atual da marca d'água
+router.get('/watermark/logo', (req, res) => {
+  const settings = db.getSettings();
+  const customPath = settings.customLogoPath;
+
+  if (customPath && fs.existsSync(customPath)) {
+    return res.sendFile(customPath);
+  }
+
+  // Fallback para a logo padrão
+  const defaultLogo = path.resolve(__dirname, '../../public/assets/logo.png');
+  if (fs.existsSync(defaultLogo)) {
+    return res.sendFile(defaultLogo);
+  }
+
+  res.status(404).json({ success: false, error: 'Nenhuma logo encontrada' });
+});
+
+// Remover logo customizada (volta ao padrão)
+router.delete('/watermark/logo', (req, res) => {
+  const settings = db.getSettings();
+  const customPath = settings.customLogoPath;
+
+  if (customPath && fs.existsSync(customPath)) {
+    try { fs.unlinkSync(customPath); } catch (_) {}
+  }
+
+  db.updateSettings({ customLogoPath: '' });
+  // Aplica a logo padrão em tempo real
+  streamer.reloadCurrentStream();
+
+  res.json({ success: true, message: 'Logo customizada removida. Voltando à logo padrão em tempo real.' });
+});
+
 // Status completo do sistema
 router.get('/status', (req, res) => {
   const playoutState = db.getPlayoutState();
@@ -512,8 +596,19 @@ router.get('/settings', (req, res) => {
 });
 
 router.post('/settings', (req, res) => {
+  const oldSettings = db.getSettings();
   const updates = req.body;
   const updated = db.updateSettings(updates);
+
+  // Se alterou a marca d'água (texto ou ativação), recarrega o stream em tempo real
+  const watermarkChanged = 
+    ('watermarkText' in updates && updates.watermarkText !== oldSettings.watermarkText) ||
+    ('enableWatermark' in updates && updates.enableWatermark !== oldSettings.enableWatermark);
+
+  if (watermarkChanged) {
+    streamer.reloadCurrentStream();
+  }
+
   res.json({ success: true, settings: updated });
 });
 

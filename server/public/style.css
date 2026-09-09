@@ -1618,3 +1618,33 @@ body {
   padding: 12px 14px;
   margin-top: 10px;
 }
+
+/* Painel de Customização de Marca D'Água e Logo */
+.watermark-customization {
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  border-radius: var(--radius-md);
+  padding: 14px;
+  margin-bottom: 16px;
+  transition: all 0.2s ease;
+}
+
+.logo-preview-box {
+  width: 140px;
+  height: 70px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px dashed rgba(245, 158, 11, 0.4);
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  overflow: hidden;
+}
+
+.logo-preview-box img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+

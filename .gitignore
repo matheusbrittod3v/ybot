@@ -6,4 +6,10 @@ data/thumbs/*
 !data/thumbs/.gitkeep
 data/db.json
 data/*.tmp
+*.mp4
+*.mkv
+*.webm
+cookies.txt
+data/cookies.txt
 .DS_Store
+

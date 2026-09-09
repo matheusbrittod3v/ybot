@@ -84,6 +84,13 @@ const elCfgAutoDelete = document.getElementById('cfg-auto-delete');
 const elCfgAutoStandby = document.getElementById('cfg-auto-standby');
 const elBtnToggleKeyEye = document.getElementById('btn-toggle-key-eye');
 
+// Watermark Customization
+const elCfgWatermarkText = document.getElementById('cfg-watermark-text');
+const elInputWatermarkLogo = document.getElementById('input-watermark-logo');
+const elWatermarkLogoPreview = document.getElementById('watermark-logo-preview');
+const elBtnResetLogo = document.getElementById('btn-reset-logo');
+const elWatermarkCustomPanel = document.getElementById('watermark-customization-panel');
+
 // YouTube Live Metadata Settings
 const elCfgBroadcastVideoId = document.getElementById('cfg-broadcast-video-id');
 const elCfgTitlePrefix = document.getElementById('cfg-title-prefix');
@@ -1355,6 +1362,22 @@ async function openSettingsModal() {
       elCfgAutoDelete.checked = s.autoDeleteFinished !== false;
       elCfgAutoStandby.checked = s.autoLoopStandby !== false;
 
+      // Watermark text personalizado
+      if (elCfgWatermarkText) {
+        const rawText = s.watermarkText || 'TV BRAZA';
+        // Remove o sufixo "- AO VIVO" se existir, mostrando só o label principal
+        elCfgWatermarkText.value = rawText.replace(/\s*[-|]\s*AO VIVO\s*$/i, '');
+      }
+      // Mostra/oculta painel de customização conforme o estado do checkbox
+      if (elWatermarkCustomPanel) {
+        elWatermarkCustomPanel.style.display = elCfgWatermark.checked ? 'block' : 'none';
+      }
+      // Atualiza preview da logo
+      if (elWatermarkLogoPreview) {
+        elWatermarkLogoPreview.src = '/api/watermark/logo?t=' + Date.now();
+        elWatermarkLogoPreview.style.display = '';
+      }
+
       // Configurações do YouTube Live Metadata
       if (elCfgBroadcastVideoId) elCfgBroadcastVideoId.value = s.youtubeBroadcastVideoId || '';
       if (elCfgTitlePrefix) elCfgTitlePrefix.value = s.defaultLiveTitlePrefix || '';
@@ -1378,6 +1401,7 @@ async function handleSaveSettings(e) {
     resolution: elCfgResolution.value,
     videoBitrate: elCfgBitrate.value,
     enableWatermark: elCfgWatermark.checked,
+    watermarkText: elCfgWatermarkText ? elCfgWatermarkText.value.trim() || 'TV BRAZA' : 'TV BRAZA',
     autoDeleteFinished: elCfgAutoDelete.checked,
     autoLoopStandby: elCfgAutoStandby.checked,
     youtubeBroadcastVideoId: elCfgBroadcastVideoId ? elCfgBroadcastVideoId.value.trim() : '',
@@ -1426,6 +1450,64 @@ if (elBtnDetectLive) {
     } finally {
       if (elSpinnerDetectLive) elSpinnerDetectLive.classList.add('hidden');
       elBtnDetectLive.disabled = false;
+    }
+  });
+}
+
+// ============================================================
+// WATERMARK: Toggle painel, Upload de Logo, Reset Logo
+// ============================================================
+if (elCfgWatermark && elWatermarkCustomPanel) {
+  elCfgWatermark.addEventListener('change', () => {
+    elWatermarkCustomPanel.style.display = elCfgWatermark.checked ? 'block' : 'none';
+  });
+}
+
+if (elInputWatermarkLogo) {
+  elInputWatermarkLogo.addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('logo', file);
+
+    try {
+      showToast('Enviando nova logo...', 'info');
+      const res = await fetch('/api/watermark/logo', { method: 'POST', body: formData });
+      const data = await res.json();
+      if (data.success) {
+        showToast('Logo atualizada com sucesso! Será aplicada no próximo segmento.', 'success');
+        if (elWatermarkLogoPreview) {
+          elWatermarkLogoPreview.src = '/api/watermark/logo?t=' + Date.now();
+          elWatermarkLogoPreview.style.display = '';
+        }
+      } else {
+        showToast(data.error || 'Erro ao enviar logo', 'error');
+      }
+    } catch (err) {
+      showToast('Erro ao enviar logo: ' + err.message, 'error');
+    }
+    // Limpa input para permitir re-upload do mesmo arquivo
+    e.target.value = '';
+  });
+}
+
+if (elBtnResetLogo) {
+  elBtnResetLogo.addEventListener('click', async () => {
+    try {
+      const res = await fetch('/api/watermark/logo', { method: 'DELETE' });
+      const data = await res.json();
+      if (data.success) {
+        showToast('Logo restaurada para o padrão!', 'success');
+        if (elWatermarkLogoPreview) {
+          elWatermarkLogoPreview.src = '/api/watermark/logo?t=' + Date.now();
+          elWatermarkLogoPreview.style.display = '';
+        }
+      } else {
+        showToast(data.error || 'Erro ao restaurar logo', 'error');
+      }
+    } catch (err) {
+      showToast('Erro ao restaurar logo: ' + err.message, 'error');
     }
   });
 }

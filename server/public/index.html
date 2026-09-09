@@ -543,6 +543,44 @@
             </label>
           </div>
 
+          <!-- Personalização da Marca d'Água (Logo + Texto) -->
+          <div class="watermark-customization" id="watermark-customization-panel">
+            <div class="settings-divider" style="margin-top: 8px; padding-top: 8px;">
+              <h4>🎨 PERSONALIZAR MARCA D'ÁGUA</h4>
+              <small>Altere o texto e a logo exibidos durante a transmissão ao vivo.</small>
+            </div>
+
+            <div class="form-group">
+              <label for="cfg-watermark-text">Texto da Marca d'Água (canto superior direito):</label>
+              <input type="text" id="cfg-watermark-text" placeholder="Ex: TV BRAZA" />
+              <small>Nome exibido no canto superior da tela. O "● AO VIVO" é adicionado automaticamente.</small>
+            </div>
+
+            <div class="form-group">
+              <label>Logo da Transmissão (canto inferior esquerdo):</label>
+              <div style="display: flex; gap: 12px; align-items: center;">
+                <div class="logo-preview-box" id="logo-preview-box">
+                  <img src="/api/watermark/logo" alt="Logo atual" id="watermark-logo-preview" style="max-width: 120px; max-height: 60px; border-radius: 8px; object-fit: contain;" onerror="this.style.display='none'" />
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 8px; flex: 1;">
+                  <label class="btn-upload-file" style="justify-content: center; padding: 10px;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                      <polyline points="17 8 12 3 7 8"></polyline>
+                      <line x1="12" y1="3" x2="12" y2="15"></line>
+                    </svg>
+                    <span>Trocar Logo</span>
+                    <input type="file" id="input-watermark-logo" accept="image/*" style="display:none">
+                  </label>
+                  <button type="button" class="btn-small-danger" id="btn-reset-logo" title="Voltar para a logo padrão">
+                    Restaurar Logo Padrão
+                  </button>
+                </div>
+              </div>
+              <small style="margin-top: 6px; display: block;">Recomendado: PNG transparente, dimensão ~260px de largura.</small>
+            </div>
+          </div>
+
           <div class="form-group-checkbox">
             <label class="checkbox-label">
               <input type="checkbox" id="cfg-auto-delete" checked />

@@ -60,6 +60,7 @@ class StreamerEngine {
     this.monitorInterval = null;
     this.shouldRun = false;
     this.standbyCheckInterval = null;
+    this.isReloading = false;
 
     // Escuta eventos de download concluído para iniciar reprodução se estiver em standby
     downloader.onEvent((event, payload) => {
@@ -291,14 +292,28 @@ class StreamerEngine {
       '-ar', '44100'
     ];
 
-    // Adiciona marca d'água opcional TV Braza com logo no canto inferior esquerdo e selo AO VIVO no canto superior direito
+    // Adiciona marca d'água opcional com logo no canto inferior esquerdo e selo AO VIVO no canto superior direito
     if (settings.enableWatermark) {
-      const logoPngPath = path.resolve(__dirname, '../../public/assets/logo.png');
-      if (fs.existsSync(logoPngPath)) {
-        const escapedLogoPath = logoPngPath.replace(/\\/g, '/').replace(/'/g, "'\\''");
-        args.push('-vf', `movie='${escapedLogoPath}',scale=260:-1[logo];[in][logo]overlay=x=35:y=H-h-35[v1];[v1]drawbox=x=w-320:y=28:w=280:h=46:color=0x000000@0.65:t=fill,drawtext=text='TV BRAZA':fontcolor=0xf59e0b:fontsize=24:x=w-305:y=38,drawbox=x=w-168:y=34:w=2:h=34:color=0xffffff@0.25:t=fill,drawbox=x=w-150:y=45:w=10:h=10:color=0xef4444:t=fill,drawtext=text='AO VIVO':fontcolor=0xffffff:fontsize=17:x=w-132:y=41`);
+      // Resolve a logo: customizada (DATA_DIR) → padrão (public/assets)
+      let logoPngPath = '';
+      if (settings.customLogoPath && fs.existsSync(settings.customLogoPath)) {
+        logoPngPath = settings.customLogoPath;
       } else {
-        args.push('-vf', `drawbox=x=w-320:y=28:w=280:h=46:color=0x000000@0.65:t=fill,drawtext=text='TV BRAZA':fontcolor=0xf59e0b:fontsize=24:x=w-305:y=38,drawbox=x=w-168:y=34:w=2:h=34:color=0xffffff@0.25:t=fill,drawbox=x=w-150:y=45:w=10:h=10:color=0xef4444:t=fill,drawtext=text='AO VIVO':fontcolor=0xffffff:fontsize=17:x=w-132:y=41`);
+        const defaultLogo = path.resolve(__dirname, '../../public/assets/logo.png');
+        if (fs.existsSync(defaultLogo)) logoPngPath = defaultLogo;
+      }
+
+      // Texto dinâmico da marca d'água (ex: "TV BRAZA", "MINHA TV", etc)
+      const rawWatermarkText = settings.watermarkText || 'TV BRAZA';
+      // Separa em label principal e sufixo "AO VIVO"
+      const parts = rawWatermarkText.split(/\s*[-|]\s*/);
+      const mainLabel = (parts[0] || 'TV BRAZA').replace(/'/g, "'\\''");
+
+      if (logoPngPath) {
+        const escapedLogoPath = logoPngPath.replace(/\\/g, '/').replace(/'/g, "'\\''");
+        args.push('-vf', `movie='${escapedLogoPath}',scale=260:-1[logo];[in][logo]overlay=x=35:y=H-h-35[v1];[v1]drawbox=x=w-320:y=28:w=280:h=46:color=0x000000@0.65:t=fill,drawtext=text='${mainLabel}':fontcolor=0xf59e0b:fontsize=24:x=w-305:y=38,drawbox=x=w-168:y=34:w=2:h=34:color=0xffffff@0.25:t=fill,drawbox=x=w-150:y=45:w=10:h=10:color=0xef4444:t=fill,drawtext=text='AO VIVO':fontcolor=0xffffff:fontsize=17:x=w-132:y=41`);
+      } else {
+        args.push('-vf', `drawbox=x=w-320:y=28:w=280:h=46:color=0x000000@0.65:t=fill,drawtext=text='${mainLabel}':fontcolor=0xf59e0b:fontsize=24:x=w-305:y=38,drawbox=x=w-168:y=34:w=2:h=34:color=0xffffff@0.25:t=fill,drawbox=x=w-150:y=45:w=10:h=10:color=0xef4444:t=fill,drawtext=text='AO VIVO':fontcolor=0xffffff:fontsize=17:x=w-132:y=41`);
       }
     }
 
@@ -309,6 +324,10 @@ class StreamerEngine {
     }
 
     this.spawnFfmpeg(args, () => {
+      if (this.isReloading) {
+        console.log(`[Streamer] Recarregamento ativo. Mantendo item "${item.title}" no ar...`);
+        return;
+      }
       // Callback executado ao terminar o vídeo
       console.log(`[Streamer] VÍDEO CONCLUÍDO: "${item.title}". Limpando e iniciando próximo da fila...`);
       
@@ -559,6 +578,29 @@ class StreamerEngine {
     setTimeout(() => {
       this.playNextInQueue();
     }, 1500);
+  }
+
+  reloadCurrentStream() {
+    if (!this.shouldRun) return;
+    console.log('[Streamer] 🔄 Aplicando alterações de watermark/logo na transmissão em tempo real...');
+    if (this.currentMode === 'STANDBY') {
+      this.killProcess();
+      setTimeout(() => {
+        if (this.shouldRun && this.currentMode === 'STANDBY') {
+          this.streamStandby();
+        }
+      }, 400);
+    } else if (this.currentMode === 'VIDEO' && this.currentItem) {
+      this.isReloading = true;
+      const current = this.currentItem;
+      this.killProcess();
+      setTimeout(() => {
+        this.isReloading = false;
+        if (this.shouldRun && current) {
+          this.streamVideo(current);
+        }
+      }, 400);
+    }
   }
 }
 
