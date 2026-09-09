@@ -80,7 +80,10 @@ function buildScheduleOverlaySteps(currentInput, settings, currentItemId = null)
 
   const intervalMins = Number(settings.scheduleOverlayInterval) || 5;
   const intervalSecs = Math.max(1, intervalMins) * 60;
-  const durationSecs = Math.max(5, Math.min(60, Number(settings.scheduleOverlayDuration) || 12));
+  // Permite durações maiores que 30s (ex: 45s, 60s, 120s, até o limite do intervalo configurado)
+  const maxAllowedDuration = Math.max(10, intervalSecs - 5);
+  const rawDuration = Number(settings.scheduleOverlayDuration) || 12;
+  const durationSecs = Math.max(5, Math.min(maxAllowedDuration, rawDuration));
   const startOffset = 15; // Exibe aos 15 segundos do vídeo e depois a cada ciclo
   const animTime = 0.8;   // 0.8s para slide-up e slide-down
 
