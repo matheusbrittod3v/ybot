@@ -112,12 +112,8 @@ async function bootstrap() {
     console.log(`====================================================`);
 
     const settings = db.getSettings();
-    const playoutState = db.getPlayoutState();
-    const queue = db.getQueue();
-    const hasActivePlaying = queue.some(i => i.status === 'playing') || playoutState.state === 'PLAYING';
-
-    if (settings.autoLoopStandby || hasActivePlaying) {
-      console.log(`[Autostart] Inicializando motor de transmissão contínua${hasActivePlaying ? ' (⚡ Detectada live ativa antes do deploy/reinicialização)' : ''}...`);
+    if (settings.autoLoopStandby) {
+      console.log('[Autostart] Inicializando motor de transmissão contínua...');
       streamer.start();
     }
 

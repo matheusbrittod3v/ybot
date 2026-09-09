@@ -118,41 +118,6 @@ class StreamerEngine {
       } catch (_) {}
     }
 
-    try {
-      const queue = db.getQueue();
-      const firstItem = queue[0];
-      let resumeItem = null;
-      let resumeOffset = 0;
-
-      if (firstItem && firstItem.status !== 'error' && (firstItem.status === 'playing' || firstItem.lastPositionSeconds > 3)) {
-        resumeItem = firstItem;
-        resumeOffset = firstItem.lastPositionSeconds || 0;
-      }
-
-      if (!resumeItem) {
-        const savedPosition = await db.getLastSavedLivePosition();
-        if (savedPosition && savedPosition.activeItemId && savedPosition.elapsedSeconds > 3) {
-          const item = db.getQueueItem(savedPosition.activeItemId);
-          if (item && item.status !== 'finished' && item.status !== 'error') {
-            resumeItem = item;
-            resumeOffset = savedPosition.elapsedSeconds;
-          }
-        }
-      }
-
-      if (resumeItem) {
-        console.log('================================================================');
-        console.log('[Deploy/Crash Recovery] ⚡ RECUPERANDO VÍDEO INTERROMPIDO DA TRANSMISSÃO!');
-        console.log(`Vídeo:         "${resumeItem.title}"`);
-        console.log(`Posição Salva: ${secondsToTimeStr(resumeOffset)} (${Math.floor(resumeOffset)}s)`);
-        console.log('================================================================');
-        await this.streamVideo(resumeItem, resumeOffset);
-        return;
-      }
-    } catch (err) {
-      console.warn('[Streamer] Não foi possível restaurar live anterior:', err.message);
-    }
-
     this.playNextInQueue();
   }
 
