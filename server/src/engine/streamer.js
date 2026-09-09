@@ -365,10 +365,8 @@ class StreamerEngine {
 
     console.log(`[Streamer] PREPARANDO TRANSMISSÃO: "${item.title}" ${isDirect ? '[Modo: ⚡ Stream Direto (Sem Anúncios)]' : '[Arquivo Local]'}`);
 
-    // Mantém vinheta Standby no ar durante a resolução do link para garantir transmissão RTMP 100% contínua
-    if (!this.ffmpegProc) {
-      this.streamStandby();
-    }
+    // Mantém vinheta Standby apenas se já estiver rodando; evita conexões efêmeras de 1s
+    // que causam queda momentânea da taxa de bits para 0 Kbps no YouTube
 
     try {
       let rtmpTarget = this.getStreamTarget();
@@ -423,8 +421,10 @@ class StreamerEngine {
         inputArgs = ['-re', '-thread_queue_size', '2048', '-i', item.filePath];
       }
 
-      const videoBitrate = settings.videoBitrate || '4500k';
+      const videoBitrate = settings.videoBitrate || '6800k';
       const audioBitrate = settings.audioBitrate || '160k';
+      const numericBitrate = parseInt(videoBitrate, 10) || 6800;
+      const bufSize = `${numericBitrate * 2}k`;
 
       const args = [
         ...inputArgs,
@@ -432,8 +432,9 @@ class StreamerEngine {
         '-preset', 'ultrafast',
         '-tune', 'zerolatency',
         '-b:v', videoBitrate,
+        '-minrate', videoBitrate,
         '-maxrate', videoBitrate,
-        '-bufsize', '9000k',
+        '-bufsize', bufSize,
         '-pix_fmt', 'yuv420p',
         '-g', '60',
         '-keyint_min', '60',
@@ -441,6 +442,7 @@ class StreamerEngine {
         '-c:a', 'aac',
         '-b:a', audioBitrate,
         '-ar', '44100',
+        '-flvflags', 'no_duration_filesize',
         '-max_muxing_queue_size', '2048'
       ];
 
@@ -661,8 +663,10 @@ class StreamerEngine {
 
     const settings = db.getSettings();
     const rtmpTarget = this.getStreamTarget();
-    const videoBitrate = settings.videoBitrate || '4500k';
+    const videoBitrate = settings.videoBitrate || '6800k';
     const audioBitrate = settings.audioBitrate || '160k';
+    const numericBitrate = parseInt(videoBitrate, 10) || 6800;
+    const bufSize = `${numericBitrate * 2}k`;
 
     let args = [];
     const standbyFile = getStandbyFilePath();
@@ -683,8 +687,9 @@ class StreamerEngine {
         '-preset', 'ultrafast',
         '-tune', 'zerolatency',
         '-b:v', videoBitrate,
+        '-minrate', videoBitrate,
         '-maxrate', videoBitrate,
-        '-bufsize', '9000k',
+        '-bufsize', bufSize,
         '-pix_fmt', 'yuv420p',
         '-g', '60',
         '-keyint_min', '60',
@@ -692,6 +697,7 @@ class StreamerEngine {
         '-c:a', 'aac',
         '-b:a', audioBitrate,
         '-ar', '44100',
+        '-flvflags', 'no_duration_filesize',
         '-max_muxing_queue_size', '2048'
       ];
 
@@ -728,8 +734,9 @@ class StreamerEngine {
         '-preset', 'ultrafast',
         '-tune', 'zerolatency',
         '-b:v', videoBitrate,
+        '-minrate', videoBitrate,
         '-maxrate', videoBitrate,
-        '-bufsize', '9000k',
+        '-bufsize', bufSize,
         '-pix_fmt', 'yuv420p',
         '-g', '60',
         '-keyint_min', '60',
@@ -737,6 +744,7 @@ class StreamerEngine {
         '-c:a', 'aac',
         '-b:a', audioBitrate,
         '-ar', '44100',
+        '-flvflags', 'no_duration_filesize',
         '-max_muxing_queue_size', '2048'
       ];
     }

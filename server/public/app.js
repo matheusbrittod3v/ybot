@@ -1348,7 +1348,7 @@ async function openSettingsModal() {
       elCfgStreamKey.value = s.youtubeStreamKey || '';
       elCfgRtmpUrl.value = s.youtubeRtmpUrl || 'rtmp://a.rtmp.youtube.com/live2';
       elCfgResolution.value = s.resolution || '1080p';
-      elCfgBitrate.value = s.videoBitrate || '4500k';
+      elCfgBitrate.value = s.videoBitrate || '6800k';
       elCfgWatermark.checked = s.enableWatermark !== false;
       elCfgAutoDelete.checked = s.autoDeleteFinished !== false;
       elCfgAutoStandby.checked = s.autoLoopStandby !== false;
