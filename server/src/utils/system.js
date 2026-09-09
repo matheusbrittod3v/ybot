@@ -12,7 +12,15 @@ function formatBytes(bytes, decimals = 2) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
 }
 
-export function getSystemStats() {
+let cachedStats = null;
+let lastStatsTime = 0;
+
+export function getSystemStats(forceRefresh = false) {
+  const now = Date.now();
+  if (cachedStats && !forceRefresh && (now - lastStatsTime < 2500)) {
+    return cachedStats;
+  }
+
   // Memory
   const totalMem = os.totalmem();
   const freeMem = os.freemem();
@@ -97,7 +105,7 @@ export function getSystemStats() {
     console.error('[SystemStats] Erro ao listar pasta de mídia:', err.message);
   }
 
-  return {
+  cachedStats = {
     uptime: Math.round(process.uptime()),
     osUptime: Math.round(os.uptime()),
     platform: os.platform(),
@@ -120,4 +128,7 @@ export function getSystemStats() {
     disk,
     media: mediaStats
   };
+  lastStatsTime = now;
+
+  return cachedStats;
 }

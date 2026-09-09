@@ -136,9 +136,12 @@ const elToastContainer = document.getElementById('toast-container');
 // Inicialização
 document.addEventListener('DOMContentLoaded', () => {
   initWebSocket();
-  fetchStatus();
-  fetchQueue();
-  fetchHistory();
+  // Carregamento paralelo ultra-rápido de estado inicial
+  Promise.allSettled([
+    fetchStatus(),
+    fetchQueue(),
+    fetchHistory()
+  ]);
   setupEventListeners();
 
   // Inicia contador contínuo de tempo
@@ -464,7 +467,7 @@ function renderQueue(queue) {
     row.innerHTML = `
       <div class="queue-order">${index + 1}</div>
       <div style="position: relative; width: 96px; aspect-ratio: 16/9;">
-        <img src="${thumbSrc}" class="queue-thumb" style="width: 100%; height: 100%;" alt="Thumb">
+        <img src="${thumbSrc}" class="queue-thumb" style="width: 100%; height: 100%;" alt="Thumb" loading="lazy" decoding="async">
         ${hasCustomThumb ? '<span class="custom-thumb-indicator">CUSTOM</span>' : ''}
       </div>
       <div class="queue-info">

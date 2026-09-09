@@ -25,8 +25,14 @@ const PORT = parseInt(process.env.PORT || '3000', 10);
 
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, '../public')));
-app.use('/thumbs', express.static(THUMBS_DIR));
+app.use(express.static(path.join(__dirname, '../public'), {
+  maxAge: '1h',
+  etag: true
+}));
+app.use('/thumbs', express.static(THUMBS_DIR, {
+  maxAge: '1d',
+  etag: true
+}));
 
 // API Routes
 app.use('/api', apiRouter);

@@ -91,16 +91,48 @@ function getClient() {
   }
 }
 
+import net from 'net';
+
+function isPortOpen(host, port, timeoutMs = 150) {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    socket.setTimeout(timeoutMs);
+    socket.once('connect', () => {
+      socket.destroy();
+      resolve(true);
+    });
+    socket.once('timeout', () => {
+      socket.destroy();
+      resolve(false);
+    });
+    socket.once('error', () => {
+      socket.destroy();
+      resolve(false);
+    });
+    socket.connect(port, host);
+  });
+}
+
 /**
  * Health check assíncrono para verificar se o motor nativo C++ está ativo.
  */
 export async function checkCppEngineHealth() {
   ensureCppEngineRunning();
+
+  // Teste ultra-rápido de socket (sub-10ms) para não prender o event-loop se o binário não estiver rodando
+  const [host, portStr] = GRPC_TARGET.split(':');
+  const port = parseInt(portStr || '50051', 10);
+  const portActive = await isPortOpen(host || '127.0.0.1', port, 100);
+  if (!portActive) {
+    isConnected = false;
+    return { ok: false, message: 'Porta do motor C++ fechada (modo integrado padrão ativo)' };
+  }
+
   const c = getClient();
   if (!c) return { ok: false, message: 'gRPC client não inicializado' };
 
   return new Promise((resolve) => {
-    const deadline = new Date(Date.now() + 2000); // 2s timeout
+    const deadline = new Date(Date.now() + 500); // 500ms timeout
     c.GetHealth({}, { deadline }, (err, response) => {
       if (err) {
         isConnected = false;
