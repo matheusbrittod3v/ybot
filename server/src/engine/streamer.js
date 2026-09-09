@@ -85,27 +85,18 @@ function buildScheduleOverlaySteps(currentInput, settings, currentItemId = null)
   const rawDuration = Number(settings.scheduleOverlayDuration) || 12;
   const durationSecs = Math.max(5, Math.min(maxAllowedDuration, rawDuration));
   const startOffset = 15; // Exibe aos 15 segundos do vídeo e depois a cada ciclo
-  const animTime = 0.8;   // 0.8s para slide-up e slide-down
 
   const enableExpr = `between(mod(t\\,${intervalSecs})\\,${startOffset}\\,${startOffset + durationSecs})`;
-  const cycleVal = `(mod(t\\,${intervalSecs})-${startOffset})`;
-
-  // Animação vertical suave (y):
-  // Desliza do piso (ih) até (ih-130) em 0.8s
-  // Permanece em (ih-130)
-  // Desliza de volta para o piso nos últimos 0.8s
-  // Estritamente limitado entre (ih-130) e ih para nunca produzir coordenadas negativas
-  const yCard = `max(0\\,min(ih\\,if(lt(${cycleVal}\\,${animTime})\\,ih-130*(max(0\\,${cycleVal})/${animTime})\\,if(gt(${cycleVal}\\,${durationSecs}-${animTime})\\,ih-130+130*(min(${animTime}\\,max(0\\,${cycleVal}-(${durationSecs}-${animTime})))/${animTime})\\,ih-130))))`;
 
   return [
     // 1. Card backdrop translúcido moderno
-    `[${currentInput}]drawbox=x=50:y='${yCard}':w='min(iw-100\\,1200)':h=76:color=0x0b0f19@0.92:t=fill:enable='${enableExpr}'[v_b1]`,
+    `[${currentInput}]drawbox=x=50:y=ih-140:w=iw-100:h=76:color=0x0b0f19@0.92:t=fill:enable='${enableExpr}'[v_b1]`,
     // 2. Barra de destaque neon âmbar na borda esquerda
-    `[v_b1]drawbox=x=50:y='${yCard}':w=6:h=76:color=0xf59e0b:t=fill:enable='${enableExpr}'[v_b2]`,
+    `[v_b1]drawbox=x=50:y=ih-140:w=6:h=76:color=0xf59e0b:t=fill:enable='${enableExpr}'[v_b2]`,
     // 3. Rótulo da vinheta
-    `[v_b2]drawtext=text='● A SEGUIR NA GRADE':fontsize=18:fontcolor=0xf59e0b:x=76:y='${yCard}+14'${fontOpt}:enable='${enableExpr}'[v_txt1]`,
+    `[v_b2]drawtext=text='● A SEGUIR NA GRADE':fontsize=18:fontcolor=0xf59e0b:x=76:y=main_h-126${fontOpt}:enable='${enableExpr}'[v_txt1]`,
     // 4. Título do próximo programa (sem rótulo final para saída direta ao encoder)
-    `[v_txt1]drawtext=text='${cleanNextTitle}':fontsize=24:fontcolor=0xffffff:x=76:y='${yCard}+42'${fontOpt}:enable='${enableExpr}'`
+    `[v_txt1]drawtext=text='${cleanNextTitle}':fontsize=24:fontcolor=0xffffff:x=76:y=main_h-96${fontOpt}:enable='${enableExpr}'`
   ];
 }
 

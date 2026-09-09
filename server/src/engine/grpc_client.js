@@ -1,5 +1,7 @@
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
+import net from 'net';
 import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import grpc from '@grpc/grpc-js';
@@ -9,15 +11,30 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const PROTO_PATH = path.resolve(__dirname, '../../proto/playout.proto');
-const GRPC_TARGET = process.env.GRPC_ENGINE_HOST || '127.0.0.1:50051';
 
+function getCandidateTargets() {
+  const list = [];
+  if (process.env.GRPC_ENGINE_HOST) {
+    list.push(process.env.GRPC_ENGINE_HOST);
+  }
+  const hostname = process.env.HOSTNAME || os.hostname();
+  if (hostname && hostname !== 'localhost') {
+    list.push(`${hostname}:50051`);
+  }
+  list.push('127.0.0.1:50051');
+  list.push('localhost:50051');
+  return [...new Set(list)];
+}
+
+let activeTarget = getCandidateTargets()[0] || '127.0.0.1:50051';
 let client = null;
 let isConnected = false;
 let metricsStream = null;
 let engineProcess = null;
 
 /**
- * Procura e inicia o binário C++ tvbraza-engine caso esteja presente no sistema.
+ * Procura e inicia o binário C++ tvbraza-engine escutando em 0.0.0.0:50051
+ * para aceitar chamadas tanto locais quanto pelo hostname do container.
  */
 export function ensureCppEngineRunning() {
   if (engineProcess) return;
@@ -34,8 +51,8 @@ export function ensureCppEngineRunning() {
   }
 
   try {
-    console.log(`[C++ Engine Spawner] Inicializando motor nativo em: ${binPath}`);
-    engineProcess = spawn(binPath, [GRPC_TARGET], {
+    console.log(`[C++ Engine Spawner] Inicializando motor nativo em: ${binPath} (escutando em 0.0.0.0:50051)`);
+    engineProcess = spawn(binPath, ['0.0.0.0:50051'], {
       stdio: ['ignore', 'inherit', 'inherit']
     });
 
@@ -43,6 +60,7 @@ export function ensureCppEngineRunning() {
       console.warn(`[C++ Engine Spawner] Processo C++ encerrou (código: ${code}, sinal: ${sig})`);
       engineProcess = null;
       isConnected = false;
+      client = null;
     });
 
     process.on('exit', () => {
@@ -54,44 +72,6 @@ export function ensureCppEngineRunning() {
     console.warn('[C++ Engine Spawner] Falha ao disparar binário nativo:', err.message);
   }
 }
-
-/**
- * Inicializa e carrega a definição do Protobuf para o cliente gRPC.
- */
-function getClient() {
-  if (client) return client;
-
-  try {
-    const packageDefinition = protoLoader.loadSync(PROTO_PATH, {
-      keepCase: true,
-      longs: String,
-      enums: String,
-      defaults: true,
-      oneofs: true
-    });
-
-    const protoDescriptor = grpc.loadPackageDefinition(packageDefinition);
-    const PlayoutEngine = protoDescriptor.tvbraza.playout.PlayoutEngine;
-
-    client = new PlayoutEngine(
-      GRPC_TARGET,
-      grpc.credentials.createInsecure(),
-      {
-        'grpc.keepalive_time_ms': 10000,
-        'grpc.keepalive_timeout_ms': 5000,
-        'grpc.keepalive_permit_without_calls': 1,
-        'grpc.max_receive_message_length': 16 * 1024 * 1024
-      }
-    );
-
-    return client;
-  } catch (err) {
-    console.warn('[gRPC Client] Erro ao carregar proto definition:', err.message);
-    return null;
-  }
-}
-
-import net from 'net';
 
 function isPortOpen(host, port, timeoutMs = 150) {
   return new Promise((resolve) => {
@@ -114,25 +94,72 @@ function isPortOpen(host, port, timeoutMs = 150) {
 }
 
 /**
+ * Inicializa e carrega a definição do Protobuf para o cliente gRPC.
+ */
+function getClient(target = activeTarget) {
+  if (client && activeTarget === target) return client;
+
+  try {
+    const packageDefinition = protoLoader.loadSync(PROTO_PATH, {
+      keepCase: true,
+      longs: String,
+      enums: String,
+      defaults: true,
+      oneofs: true
+    });
+
+    const protoDescriptor = grpc.loadPackageDefinition(packageDefinition);
+    const PlayoutEngine = protoDescriptor.tvbraza.playout.PlayoutEngine;
+
+    activeTarget = target;
+    client = new PlayoutEngine(
+      target,
+      grpc.credentials.createInsecure(),
+      {
+        'grpc.keepalive_time_ms': 10000,
+        'grpc.keepalive_timeout_ms': 5000,
+        'grpc.keepalive_permit_without_calls': 1,
+        'grpc.max_receive_message_length': 16 * 1024 * 1024
+      }
+    );
+
+    return client;
+  } catch (err) {
+    console.warn('[gRPC Client] Erro ao carregar proto definition:', err.message);
+    return null;
+  }
+}
+
+/**
  * Health check assíncrono para verificar se o motor nativo C++ está ativo.
+ * Testa tanto o hostname interno do container quanto 127.0.0.1.
  */
 export async function checkCppEngineHealth() {
   ensureCppEngineRunning();
 
-  // Teste ultra-rápido de socket (sub-10ms) para não prender o event-loop se o binário não estiver rodando
-  const [host, portStr] = GRPC_TARGET.split(':');
-  const port = parseInt(portStr || '50051', 10);
-  const portActive = await isPortOpen(host || '127.0.0.1', port, 100);
-  if (!portActive) {
-    isConnected = false;
-    return { ok: false, message: 'Porta do motor C++ fechada (modo integrado padrão ativo)' };
+  const candidates = getCandidateTargets();
+  let workingTarget = null;
+
+  for (const target of candidates) {
+    const [host, portStr] = target.split(':');
+    const port = parseInt(portStr || '50051', 10);
+    const open = await isPortOpen(host, port, 120);
+    if (open) {
+      workingTarget = target;
+      break;
+    }
   }
 
-  const c = getClient();
+  if (!workingTarget) {
+    isConnected = false;
+    return { ok: false, message: 'Porta do motor C++ inacessível nos hosts candidatos (modo integrado padrão ativo)' };
+  }
+
+  const c = getClient(workingTarget);
   if (!c) return { ok: false, message: 'gRPC client não inicializado' };
 
   return new Promise((resolve) => {
-    const deadline = new Date(Date.now() + 500); // 500ms timeout
+    const deadline = new Date(Date.now() + 600); // 600ms timeout
     c.GetHealth({}, { deadline }, (err, response) => {
       if (err) {
         isConnected = false;
@@ -144,7 +171,8 @@ export async function checkCppEngineHealth() {
           version: response.version,
           engineType: response.engine_type,
           memoryRssKb: response.memory_rss_kb,
-          cpuUsagePercent: response.cpu_usage_percent
+          cpuUsagePercent: response.cpu_usage_percent,
+          target: workingTarget
         });
       }
     });
