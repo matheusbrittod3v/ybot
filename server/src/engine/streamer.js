@@ -8,6 +8,14 @@ import { downloader } from './downloader.js';
 import { ensureStandbyVideo, getStandbyFilePath, standbyFileExists } from './standby.js';
 import { youtubeUpdater } from '../utils/youtube-updater.js';
 import { resolveDownloadUrl } from '../utils/web_downloader.js';
+import {
+  checkCppEngineHealth,
+  isCppEngineAvailable,
+  startStreamViaGrpc,
+  stopStreamViaGrpc,
+  triggerStandbyViaGrpc,
+  subscribeToNativeMetrics
+} from './grpc_client.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -172,6 +180,26 @@ class StreamerEngine {
     await ensureStandbyVideo();
     this.startWatchdog();
 
+    // Verificação de alta performance com motor nativo C++ via gRPC
+    try {
+      const cppHealth = await checkCppEngineHealth();
+      if (cppHealth.ok) {
+        console.log(`[Streamer] ⚡ Motor Nativo C++ (${cppHealth.version}) ATIVO! RSS: ${cppHealth.memoryRssKb} KB`);
+        subscribeToNativeMetrics((metric) => {
+          this.broadcast('telemetry', {
+            fps: metric.fps,
+            bitrate: `${metric.bitrate_kbps}k`,
+            speed: `${metric.speed}x`,
+            frameCount: metric.frame_count,
+            state: metric.current_state,
+            uptime: metric.uptime_seconds
+          });
+        }, 500);
+      } else {
+        console.log('[Streamer] ℹ️ Motor C++ offline/não detectado. Executando em modo Playout Integrado Node/FFmpeg.');
+      }
+    } catch (_) {}
+
     if (!this.getStreamTarget()) {
       try {
         console.log('[Streamer] Chave de transmissão RTMP não detectada no banco. Consultando YouTube Studio...');
@@ -186,6 +214,7 @@ class StreamerEngine {
     this.shouldRun = false;
     this.stopWatchdog();
     this.killProcess();
+    stopStreamViaGrpc('Stream parado pelo usuário').catch(() => {});
     this.currentMode = 'STOPPED';
     this.currentItem = null;
     db.updatePlayoutState({

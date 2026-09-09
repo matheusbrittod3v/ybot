@@ -1,0 +1,78 @@
+syntax = "proto3";
+
+package tvbraza.playout;
+
+service PlayoutEngine {
+  // Inicia ou retoma a transmissão com uma determinada fonte
+  rpc StartStream(StreamRequest) returns (StreamResponse);
+
+  // Interrompe o stream ativo
+  rpc StopStream(StopRequest) returns (StreamResponse);
+
+  // Alterna dinamicamente a fonte de vídeo (seamless switch)
+  rpc SwitchSource(SourceSwitchRequest) returns (StreamResponse);
+
+  // Ativa o modo de espera (Standby) com áudio ambiente e card visual
+  rpc TriggerStandby(StandbyRequest) returns (StreamResponse);
+
+  // Streaming contínuo de telemetria de alta frequência (< 50ms)
+  rpc SubscribeMetrics(MetricsRequest) returns (stream StreamMetric);
+
+  // Health check do motor C++
+  rpc GetHealth(HealthRequest) returns (HealthResponse);
+}
+
+message StreamRequest {
+  string source_url = 1;       // URL ou caminho do arquivo de vídeo
+  string rtmp_url = 2;         // Destino RTMP do YouTube
+  string stream_key = 3;       // Chave de transmissão
+  string video_title = 4;      // Título do vídeo
+  bool direct_stream = 5;      // Flag de streaming direto (GoogleVideo CDN)
+  int32 start_position = 6;    // Posição inicial em segundos
+}
+
+message StopRequest {
+  string reason = 1;
+}
+
+message SourceSwitchRequest {
+  string next_source_url = 1;
+  string video_title = 2;
+  int32 start_position = 3;
+}
+
+message StandbyRequest {
+  string standby_file = 1;
+  string reason = 2;
+}
+
+message StreamResponse {
+  bool success = 1;
+  string message = 2;
+  int64 timestamp = 3;
+}
+
+message MetricsRequest {
+  int32 interval_ms = 1;       // Intervalo de amostragem em milissegundos
+}
+
+message StreamMetric {
+  int64 frame_count = 1;
+  double fps = 2;
+  int32 bitrate_kbps = 3;
+  double speed = 4;
+  int64 uptime_seconds = 5;
+  int64 dropped_frames = 6;
+  string current_state = 7;    // "STREAMING", "STANDBY", "BUFFERING", "IDLE"
+  int64 timestamp = 8;
+}
+
+message HealthRequest {}
+
+message HealthResponse {
+  bool ok = 1;
+  string version = 2;
+  string engine_type = 3;      // "TV Braza C++ Playout Core"
+  int64 memory_rss_kb = 4;
+  int32 cpu_usage_percent = 5;
+}

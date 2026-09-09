@@ -1,7 +1,29 @@
-# TV Braza Studio - Dockerfile Playout 24/7
+# ====================================================
+# Estágio 1: Build do Motor Nativo C++ com gRPC e Protobuf
+# ====================================================
+FROM node:20-bookworm-slim AS cpp-builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    cmake \
+    libgrpc++-dev \
+    protobuf-compiler-grpc \
+    libprotobuf-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+COPY server/proto/ ./server/proto/
+COPY server/cpp-engine/ ./server/cpp-engine/
+
+WORKDIR /src/server/cpp-engine/build
+RUN cmake .. && make -j$(nproc)
+
+# ====================================================
+# Estágio 2: Imagem Final de Execução (Runtime Enxuto)
+# ====================================================
 FROM node:20-bookworm-slim
 
-# Instala dependências do sistema: FFmpeg, Python3, python3-pip, curl e certificados
+# Instala dependências de runtime: FFmpeg, Python3, python3-pip, curl, certificados e libs do gRPC
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     python3 \
@@ -9,7 +31,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ca-certificates \
     fonts-freefont-ttf \
+    libgrpc++1.51 \
+    libprotobuf32 \
     && rm -rf /var/lib/apt/lists/*
+
+# Copia o binário C++ nativo gerado no estágio de build
+COPY --from=cpp-builder /src/server/cpp-engine/build/tvbraza-engine /usr/local/bin/tvbraza-engine
 
 # Instala pytubefix (Biblioteca com PO Token automático para download sem cookies)
 RUN pip install --no-cache-dir --break-system-packages pytubefix
