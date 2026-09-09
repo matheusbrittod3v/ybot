@@ -11,5 +11,6 @@ data/*.tmp
 *.webm
 cookies.txt
 data/cookies.txt
+data/epg_banner.png
 .DS_Store
 

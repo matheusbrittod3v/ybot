@@ -93,47 +93,59 @@ setInterval(() => {
   }
 }, 3000);
 
-// Inicialização do servidor
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`====================================================`);
-  console.log(`  TV BRAZA - STUDIO DE TRANSMISSAO 24/7 (YOUTUBE)   `);
-  console.log(`====================================================`);
-  console.log(`Painel Administrativo: http://0.0.0.0:${PORT}`);
-  console.log(`Porta configurada:     ${PORT}`);
-  console.log(`Ambiente:              ${process.env.NODE_ENV || 'development'}`);
-  console.log(`====================================================`);
-
-  // Inicia automaticamente o Playout se auto-start habilitado
-  const settings = db.getSettings();
-  if (settings.autoLoopStandby) {
-    console.log('[Autostart] Inicializando motor de transmissão contínua...');
-    streamer.start();
+async function bootstrap() {
+  try {
+    console.log('[Boot] Conectando ao MySQL e carregando dados...');
+    await db.init();
+  } catch (err) {
+    console.error('[Boot] Erro ao sincronizar MySQL:', err.message);
   }
 
-  // Auto-gera cookies sintéticos se não existirem no disco para prevenir erros de bot
-  const cookiesPath = path.join(DATA_DIR, 'cookies.txt');
-  if (!fs.existsSync(cookiesPath) || fs.statSync(cookiesPath).size === 0) {
-    const cookieGen = path.join(__dirname, 'utils/cookie_generator.py');
-    if (fs.existsSync(cookieGen)) {
-      console.log('[Autostart] Inicializando cookies sintéticos para bypass anti-bot...');
-      import('child_process').then(({ execFile }) => {
-        execFile('python3', [cookieGen, cookiesPath], (err) => {
-          if (!err) console.log('[Autostart] Cookies sintéticos ativados automaticamente!');
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`====================================================`);
+    console.log(`  TV BRAZA - STUDIO DE TRANSMISSAO 24/7 (YOUTUBE)   `);
+    console.log(`====================================================`);
+    console.log(`Painel Administrativo: http://0.0.0.0:${PORT}`);
+    console.log(`Porta configurada:     ${PORT}`);
+    console.log(`Ambiente:              ${process.env.NODE_ENV || 'development'}`);
+    console.log(`Banco de Dados:        MySQL (boty)`);
+    console.log(`====================================================`);
+
+    const settings = db.getSettings();
+    const playoutState = db.getPlayoutState();
+    const queue = db.getQueue();
+    const hasActivePlaying = queue.some(i => i.status === 'playing') || playoutState.state === 'PLAYING';
+
+    if (settings.autoLoopStandby || hasActivePlaying) {
+      console.log(`[Autostart] Inicializando motor de transmissão contínua${hasActivePlaying ? ' (⚡ Detectada live ativa antes do deploy/reinicialização)' : ''}...`);
+      streamer.start();
+    }
+
+    const cookiesPath = path.join(DATA_DIR, 'cookies.txt');
+    if (!fs.existsSync(cookiesPath) || fs.statSync(cookiesPath).size === 0) {
+      const cookieGen = path.join(__dirname, 'utils/cookie_generator.py');
+      if (fs.existsSync(cookieGen)) {
+        console.log('[Autostart] Inicializando cookies sintéticos para bypass anti-bot...');
+        import('child_process').then(({ execFile }) => {
+          execFile('python3', [cookieGen, cookiesPath], (err) => {
+            if (!err) console.log('[Autostart] Cookies sintéticos ativados automaticamente!');
+          });
+        });
+      }
+    }
+
+    const currentSettings = db.getSettings();
+    if (currentSettings.googleRefreshToken) {
+      import('./utils/youtube-updater.js').then(({ youtubeUpdater }) => {
+        youtubeUpdater.getActiveBroadcastId().catch(err => {
+          console.warn('[Autostart] Não foi possível auto-detectar a live:', err.message);
         });
       });
     }
-  }
+  });
+}
 
-  // Detecção automática da Live ativa no canal do YouTube
-  const currentSettings = db.getSettings();
-  if (currentSettings.googleRefreshToken) {
-    import('./utils/youtube-updater.js').then(({ youtubeUpdater }) => {
-      youtubeUpdater.getActiveBroadcastId().catch(err => {
-        console.warn('[Autostart] Não foi possível auto-detectar a live:', err.message);
-      });
-    });
-  }
-});
+bootstrap();
 
 // Finalização graciosa
 function gracefulShutdown(signal) {

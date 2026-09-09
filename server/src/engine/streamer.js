@@ -14,6 +14,14 @@ const __dirname = path.dirname(__filename);
 const execFileAsync = promisify(execFile);
 const RESOLVER_SCRIPT = path.join(__dirname, '../utils/stream_resolver.py');
 
+function secondsToTimeStr(totalSeconds) {
+  const s = Math.floor(Math.max(0, totalSeconds || 0));
+  const hrs = Math.floor(s / 3600);
+  const mins = Math.floor((s % 3600) / 60);
+  const secs = s % 60;
+  return [hrs, mins, secs].map(v => String(v).padStart(2, '0')).join(':');
+}
+
 async function resolveDirectStreams(url) {
   // 1. Motor Primário Web Resolver (Instantâneo, zero verificação de bot, CDN direta)
   try {
@@ -103,12 +111,46 @@ class StreamerEngine {
     console.log('[Streamer] Iniciando Playout 24/7 TV Braza...');
     await ensureStandbyVideo();
 
-    // Se a stream key ainda não estiver configurada, tenta obter automaticamente do YouTube Studio
     if (!this.getStreamTarget()) {
       try {
         console.log('[Streamer] Chave de transmissão RTMP não detectada no banco. Consultando YouTube Studio...');
         await youtubeUpdater.detectAndSaveActiveBroadcast();
       } catch (_) {}
+    }
+
+    try {
+      const queue = db.getQueue();
+      const firstItem = queue[0];
+      let resumeItem = null;
+      let resumeOffset = 0;
+
+      if (firstItem && firstItem.status !== 'error' && (firstItem.status === 'playing' || firstItem.lastPositionSeconds > 3)) {
+        resumeItem = firstItem;
+        resumeOffset = firstItem.lastPositionSeconds || 0;
+      }
+
+      if (!resumeItem) {
+        const savedPosition = await db.getLastSavedLivePosition();
+        if (savedPosition && savedPosition.activeItemId && savedPosition.elapsedSeconds > 3) {
+          const item = db.getQueueItem(savedPosition.activeItemId);
+          if (item && item.status !== 'finished' && item.status !== 'error') {
+            resumeItem = item;
+            resumeOffset = savedPosition.elapsedSeconds;
+          }
+        }
+      }
+
+      if (resumeItem) {
+        console.log('================================================================');
+        console.log('[Deploy/Crash Recovery] ⚡ RECUPERANDO VÍDEO INTERROMPIDO DA TRANSMISSÃO!');
+        console.log(`Vídeo:         "${resumeItem.title}"`);
+        console.log(`Posição Salva: ${secondsToTimeStr(resumeOffset)} (${Math.floor(resumeOffset)}s)`);
+        console.log('================================================================');
+        await this.streamVideo(resumeItem, resumeOffset);
+        return;
+      }
+    } catch (err) {
+      console.warn('[Streamer] Não foi possível restaurar live anterior:', err.message);
     }
 
     this.playNextInQueue();

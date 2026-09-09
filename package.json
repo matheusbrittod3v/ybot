@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "start": "node server/src/index.js",
-    "dev": "node --watch server/src/index.js"
+    "dev": "node --watch server/src/index.js",
+    "migrate": "node server/src/migrations/migrate.js"
   },
   "keywords": [
     "tvbraza",
@@ -23,6 +24,7 @@
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "multer": "^2.3.0",
+    "mysql2": "^3.24.4",
     "ws": "^8.18.0"
   }
 }
