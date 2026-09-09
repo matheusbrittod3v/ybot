@@ -223,26 +223,25 @@ class StreamerEngine {
 
       if (streamData && streamData.videoUrl) {
         console.log(`[Streamer Direct] Fluxos resolvidos via ${streamData.provider} (${streamData.resolution})! Iniciando broadcast...`);
+        const httpOptions = [
+          '-user_agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          '-rw_timeout', '15000000',
+          '-reconnect', '1',
+          '-reconnect_streamed', '1',
+          '-reconnect_delay_max', '5'
+        ];
         if (streamData.audioUrl && !streamData.isProgressive) {
           inputArgs = [
-            '-re',
-            '-reconnect', '1',
-            '-reconnect_streamed', '1',
-            '-reconnect_delay_max', '5',
+            ...httpOptions,
             '-i', streamData.videoUrl,
-            '-reconnect', '1',
-            '-reconnect_streamed', '1',
-            '-reconnect_delay_max', '5',
+            ...httpOptions,
             '-i', streamData.audioUrl,
             '-map', '0:v:0',
             '-map', '1:a:0'
           ];
         } else {
           inputArgs = [
-            '-re',
-            '-reconnect', '1',
-            '-reconnect_streamed', '1',
-            '-reconnect_delay_max', '5',
+            ...httpOptions,
             '-i', streamData.videoUrl
           ];
         }
@@ -330,22 +329,26 @@ class StreamerEngine {
       args.push('-f', 'null', '-');
     }
 
-    this.spawnFfmpeg(args, () => {
+    this.spawnFfmpeg(args, (code) => {
       if (this.isReloading) {
         console.log(`[Streamer] Recarregamento ativo. Mantendo item "${item.title}" no ar...`);
         return;
       }
-      // Callback executado ao terminar o vídeo
-      console.log(`[Streamer] VÍDEO CONCLUÍDO: "${item.title}". Limpando e iniciando próximo da fila...`);
-      
-      // Arquiva o item para removê-lo da fila ativa (e liberar disco se for local)
-      db.archiveFinishedItem(item.id);
 
-      this.currentItem = null;
-      // Inicia imediatamente o próximo vídeo disponível na fila
-      setTimeout(() => {
+      if (code === 0 || code === null) {
+        console.log(`[Streamer] VÍDEO CONCLUÍDO COM SUCESSO: "${item.title}". Arquivando e iniciando próximo da fila...`);
+        db.archiveFinishedItem(item.id);
+        this.currentItem = null;
         this.playNextInQueue();
-      }, 200);
+      } else {
+        console.warn(`[Streamer] FFmpeg encerrou prematuramente para "${item.title}" (código ${code}). Marcando erro e avançando...`);
+        db.updateQueueItem(item.id, {
+          status: 'error',
+          error: `Transmissão encerrada (código ${code})`
+        });
+        this.currentItem = null;
+        this.playNextInQueue();
+      }
     }, pipeSourceProc);
 
     // Se estiver transmitindo para o YouTube, garante a ativação pública da Live no YouTube Studio
