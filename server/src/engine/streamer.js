@@ -372,21 +372,23 @@ class StreamerEngine {
 
   getEffectiveBitrate(settings) {
     const targets = this.getStreamTargets();
-    let videoBitrate = settings.videoBitrate || '5500k';
-    let numericBitrate = parseInt(videoBitrate, 10) || 5500;
+    let videoBitrate = settings.videoBitrate || '4500k';
+    let numericBitrate = parseInt(videoBitrate, 10) || 4500;
 
-    // Regra da Interface Twitch: se a Twitch estiver ativa, respeita o teto de 5800k (seguro < 6000k)
+    // Regra da Interface Twitch: se a Twitch estiver ativa, crava no padrão broadcast estável de 4500k (teto seguro < 6000k)
     const hasTwitch = targets.some(t => t.id === 'twitch');
-    if (hasTwitch && numericBitrate > 5800) {
-      console.log(`[Streamer Multistream] ⚡ Interface Twitch isolada: limitando taxa de ${videoBitrate} para 5500k (teto seguro Twitch < 6000k)`);
-      numericBitrate = 5500;
-      videoBitrate = '5500k';
+    if (hasTwitch && numericBitrate > 4800) {
+      console.log(`[Streamer Multistream] ⚡ Interface Twitch ativa: ajustando taxa de ${videoBitrate} para 4500k para estabilidade máxima`);
+      numericBitrate = 4500;
+      videoBitrate = '4500k';
     }
 
     return {
       videoBitrate,
       numericBitrate,
-      bufSize: `${numericBitrate * 2}k`,
+      minRate: `${Math.round(numericBitrate * 0.9)}k`,
+      maxRate: `${numericBitrate}k`,
+      bufSize: `${numericBitrate}k`, // Buffer VBV de 1s para CBR estrito sem picos
       audioBitrate: settings.audioBitrate || '160k'
     };
   }
@@ -633,25 +635,24 @@ class StreamerEngine {
         ];
       }
 
-      const { videoBitrate, audioBitrate, bufSize } = this.getEffectiveBitrate(settings);
+      const { videoBitrate, minRate, maxRate, bufSize, audioBitrate } = this.getEffectiveBitrate(settings);
 
       const args = [
         ...inputArgs,
         '-r', '30',
         '-vsync', '1',
         '-c:v', 'libx264',
-        '-preset', 'veryfast',
-        '-profile:v', 'high',
-        '-level', '4.1',
+        '-preset', 'ultrafast',
         '-b:v', videoBitrate,
-        '-minrate', videoBitrate,
-        '-maxrate', videoBitrate,
+        '-minrate', minRate,
+        '-maxrate', maxRate,
         '-bufsize', bufSize,
         '-pix_fmt', 'yuv420p',
         '-g', '60',
         '-keyint_min', '60',
         '-sc_threshold', '0',
         '-flags:v', '+cgop',
+        '-bf', '0',
         '-threads', '0',
         '-c:a', 'aac',
         '-b:a', audioBitrate,
@@ -910,7 +911,7 @@ class StreamerEngine {
 
     const settings = db.getSettings();
     const rtmpTarget = this.getStreamTarget();
-    const { videoBitrate, audioBitrate, bufSize } = this.getEffectiveBitrate(settings);
+    const { videoBitrate, minRate, maxRate, bufSize, audioBitrate } = this.getEffectiveBitrate(settings);
     const targetResKey = String(settings.resolution || '1080p').toLowerCase().trim();
     const resConfig = RESOLUTION_CONFIGS[targetResKey] || RESOLUTION_CONFIGS['1080p'];
 
@@ -941,18 +942,17 @@ class StreamerEngine {
         '-r', '30',
         '-vsync', '1',
         '-c:v', 'libx264',
-        '-preset', 'veryfast',
-        '-profile:v', 'high',
-        '-level', '4.1',
+        '-preset', 'ultrafast',
         '-b:v', videoBitrate,
-        '-minrate', videoBitrate,
-        '-maxrate', videoBitrate,
+        '-minrate', minRate,
+        '-maxrate', maxRate,
         '-bufsize', bufSize,
         '-pix_fmt', 'yuv420p',
         '-g', '60',
         '-keyint_min', '60',
         '-sc_threshold', '0',
         '-flags:v', '+cgop',
+        '-bf', '0',
         '-threads', '0',
         '-c:a', 'aac',
         '-b:a', audioBitrate,
@@ -994,18 +994,17 @@ class StreamerEngine {
         '-r', '30',
         '-vsync', '1',
         '-c:v', 'libx264',
-        '-preset', 'veryfast',
-        '-profile:v', 'high',
-        '-level', '4.1',
+        '-preset', 'ultrafast',
         '-b:v', videoBitrate,
-        '-minrate', videoBitrate,
-        '-maxrate', videoBitrate,
+        '-minrate', minRate,
+        '-maxrate', maxRate,
         '-bufsize', bufSize,
         '-pix_fmt', 'yuv420p',
         '-g', '60',
         '-keyint_min', '60',
         '-sc_threshold', '0',
         '-flags:v', '+cgop',
+        '-bf', '0',
         '-threads', '0',
         '-c:a', 'aac',
         '-b:a', audioBitrate,

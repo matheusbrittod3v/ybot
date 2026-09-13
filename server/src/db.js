@@ -76,7 +76,7 @@ const DEFAULT_SETTINGS = {
   defaultLiveTitlePrefix: 'TV BRAZA AO VIVO: ',
   resolution: process.env.RESOLUTION || '1080p',
   fps: 30,
-  videoBitrate: process.env.VIDEO_BITRATE || '5500k',
+  videoBitrate: process.env.VIDEO_BITRATE || '4500k',
   audioBitrate: process.env.AUDIO_BITRATE || '160k',
   autoDeleteFinished: true,
   enableWatermark: true,
