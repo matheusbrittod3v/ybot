@@ -63,7 +63,7 @@ def resolve_stream(url):
     base_args = [
         '--no-playlist',
         '--no-warnings',
-        '--extractor-args', 'youtube:player_client=android_vr,android,web',
+        '--extractor-args', 'youtube:player_client=android_vr,ios,android,tv',
         '-e',
         '-g',
         '-f', 'bv*[height<=1080][ext=mp4]+ba[ext=m4a]/bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bestvideo+bestaudio/best',

@@ -53,37 +53,44 @@ async function getActiveCdn() {
  * Consulta informações completas do vídeo através do motor web
  */
 export async function resolveVideoInfo(url) {
-  const cdn = await getActiveCdn();
-  const res = await fetch(`https://${cdn}/v2/info`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-      'Referer': 'https://save-tube.com/'
-    },
-    body: JSON.stringify({ url }),
-    signal: AbortSignal.timeout(10000)
-  });
+  const cdnsToTry = [await getActiveCdn(), ...FALLBACK_CDNS];
+  const uniqueCdns = [...new Set(cdnsToTry)];
+  let lastError = null;
 
-  if (!res.ok) {
-    throw new Error(`Servidor web respondeu status ${res.status}`);
+  for (const cdn of uniqueCdns.slice(0, 3)) {
+    try {
+      const res = await fetch(`https://${cdn}/v2/info`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          'Referer': 'https://save-tube.com/'
+        },
+        body: JSON.stringify({ url }),
+        signal: AbortSignal.timeout(15000)
+      });
+
+      if (!res.ok) continue;
+
+      const json = await res.json();
+      if (!json || !json.data) continue;
+
+      const info = decodePayload(json.data);
+      return {
+        id: info.id,
+        key: info.key,
+        title: info.title,
+        duration: typeof info.duration === 'number' ? info.duration : parseInt(info.duration) || 0,
+        thumbnail: info.thumbnail || `https://img.youtube.com/vi/${info.id}/hqdefault.jpg`,
+        videoFormats: info.video_formats || [],
+        cdn
+      };
+    } catch (err) {
+      lastError = err;
+    }
   }
 
-  const json = await res.json();
-  if (!json || !json.data) {
-    throw new Error('Resposta inválida do serviço de resolução web');
-  }
-
-  const info = decodePayload(json.data);
-  return {
-    id: info.id,
-    key: info.key,
-    title: info.title,
-    duration: typeof info.duration === 'number' ? info.duration : parseInt(info.duration) || 0,
-    thumbnail: info.thumbnail || `https://img.youtube.com/vi/${info.id}/hqdefault.jpg`,
-    videoFormats: info.video_formats || [],
-    cdn
-  };
+  throw new Error(`Falha ao obter informações do vídeo via CDN Web: ${lastError?.message || 'timeout/indisponível'}`);
 }
 
 /**
@@ -91,39 +98,42 @@ export async function resolveVideoInfo(url) {
  */
 export async function resolveDownloadUrl(url, preferredQualities = ['720', '1080', '480', '360']) {
   const info = await resolveVideoInfo(url);
-  const cdn = info.cdn || (await getActiveCdn());
+  const cdnsToTry = [info.cdn, ...FALLBACK_CDNS];
+  const uniqueCdns = [...new Set(cdnsToTry)].slice(0, 3);
 
-  for (const quality of preferredQualities) {
-    try {
-      const res = await fetch(`https://${cdn}/download`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-          'Referer': 'https://save-tube.com/'
-        },
-        body: JSON.stringify({
-          downloadType: 'video',
-          quality: `${quality}`,
-          key: info.key
-        }),
-        signal: AbortSignal.timeout(9000)
-      });
+  for (const cdn of uniqueCdns) {
+    for (const quality of preferredQualities) {
+      try {
+        const res = await fetch(`https://${cdn}/download`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            'Referer': 'https://save-tube.com/'
+          },
+          body: JSON.stringify({
+            downloadType: 'video',
+            quality: `${quality}`,
+            key: info.key
+          }),
+          signal: AbortSignal.timeout(20000)
+        });
 
-      if (!res.ok) continue;
+        if (!res.ok) continue;
 
-      const data = await res.json();
-      const downloadUrl = data?.data?.downloadUrl;
-      if (downloadUrl && typeof downloadUrl === 'string' && downloadUrl.startsWith('http')) {
-        return {
-          downloadUrl,
-          quality,
-          title: info.title,
-          duration: info.duration
-        };
+        const data = await res.json();
+        const downloadUrl = data?.data?.downloadUrl;
+        if (downloadUrl && typeof downloadUrl === 'string' && downloadUrl.startsWith('http')) {
+          return {
+            downloadUrl,
+            quality,
+            title: info.title,
+            duration: info.duration
+          };
+        }
+      } catch (err) {
+        // tenta próxima qualidade ou CDN
       }
-    } catch (err) {
-      // tenta próxima resolução
     }
   }
 
