@@ -384,8 +384,9 @@ class StreamerEngine {
     // Multistream simultâneo (YouTube + Twitch) via muxer 'tee':
     // Codifica vídeo (H.264) e áudio (AAC) UMA ÚNICA VEZ e replica para ambos os servidores RTMP.
     // O parâmetro 'onfail=ignore' garante que se uma das transmissões oscilar, a outra continua 100% no ar!
+    // 'flvflags=no_duration_filesize' é indispensável para o YouTube Studio tratar como live contínua sem duração finita.
     args.push('-flags', '+global_header', '-f', 'tee');
-    const teeOutputs = targets.map(t => `[f=flv:onfail=ignore]${t.url}`).join('|');
+    const teeOutputs = targets.map(t => `[f=flv:onfail=ignore:flvflags=no_duration_filesize]${t.url}`).join('|');
     args.push(teeOutputs);
 
     return targets;
@@ -606,9 +607,11 @@ class StreamerEngine {
       const args = [
         ...inputArgs,
         '-r', '30',
+        '-vsync', '1',
         '-c:v', 'libx264',
-        '-preset', 'ultrafast',
-        '-tune', 'zerolatency',
+        '-preset', 'veryfast',
+        '-profile:v', 'high',
+        '-level', '4.1',
         '-b:v', videoBitrate,
         '-minrate', videoBitrate,
         '-maxrate', videoBitrate,
@@ -617,11 +620,13 @@ class StreamerEngine {
         '-g', '60',
         '-keyint_min', '60',
         '-sc_threshold', '0',
+        '-flags:v', '+cgop',
         '-threads', '0',
         '-c:a', 'aac',
         '-b:a', audioBitrate,
         '-ar', '48000',
         '-ac', '2',
+        '-af', 'aresample=async=1:first_pts=0',
         '-max_muxing_queue_size', '4096'
       ];
 
@@ -906,9 +911,11 @@ class StreamerEngine {
         '-map', '0:v:0',
         '-map', '0:a:0?',
         '-r', '30',
+        '-vsync', '1',
         '-c:v', 'libx264',
-        '-preset', 'ultrafast',
-        '-tune', 'zerolatency',
+        '-preset', 'veryfast',
+        '-profile:v', 'high',
+        '-level', '4.1',
         '-b:v', videoBitrate,
         '-minrate', videoBitrate,
         '-maxrate', videoBitrate,
@@ -917,11 +924,13 @@ class StreamerEngine {
         '-g', '60',
         '-keyint_min', '60',
         '-sc_threshold', '0',
+        '-flags:v', '+cgop',
         '-threads', '0',
         '-c:a', 'aac',
         '-b:a', audioBitrate,
         '-ar', '48000',
         '-ac', '2',
+        '-af', 'aresample=async=1:first_pts=0',
         '-max_muxing_queue_size', '4096'
       ];
 
@@ -955,9 +964,11 @@ class StreamerEngine {
         '-map', '[v]',
         '-map', '1:a',
         '-r', '30',
+        '-vsync', '1',
         '-c:v', 'libx264',
-        '-preset', 'ultrafast',
-        '-tune', 'zerolatency',
+        '-preset', 'veryfast',
+        '-profile:v', 'high',
+        '-level', '4.1',
         '-b:v', videoBitrate,
         '-minrate', videoBitrate,
         '-maxrate', videoBitrate,
@@ -966,11 +977,13 @@ class StreamerEngine {
         '-g', '60',
         '-keyint_min', '60',
         '-sc_threshold', '0',
+        '-flags:v', '+cgop',
         '-threads', '0',
         '-c:a', 'aac',
         '-b:a', audioBitrate,
         '-ar', '48000',
         '-ac', '2',
+        '-af', 'aresample=async=1:first_pts=0',
         '-max_muxing_queue_size', '4096'
       ];
     }

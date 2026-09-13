@@ -50,8 +50,8 @@ test('Multi-Stream: appendRtmpOutputs duplica fluxo codificado via tee muxer com
   assert.ok(args.includes('tee'), 'Deve usar o muxer tee para duplicar stream sem re-encoding');
   assert.ok(args.includes('-map'), 'Deve incluir mapeamento explícito de streams (-map) para o tee');
   
-  const teeOutputArg = args.find(a => typeof a === 'string' && a.includes('[f=flv:onfail=ignore]'));
-  assert.ok(teeOutputArg, 'Deve conter a string do muxer tee');
+  const teeOutputArg = args.find(a => typeof a === 'string' && a.includes('[f=flv:onfail=ignore:flvflags=no_duration_filesize]'));
+  assert.ok(teeOutputArg, 'Deve conter a string do muxer tee com flvflags=no_duration_filesize');
   assert.ok(teeOutputArg.includes('rtmp://a.rtmp.youtube.com/live2/yt-key'), 'Deve conter destino YouTube no tee');
   assert.ok(teeOutputArg.includes('rtmp://live.twitch.tv/app/twitch-key'), 'Deve conter destino Twitch no tee');
 });
