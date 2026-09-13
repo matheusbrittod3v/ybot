@@ -79,6 +79,11 @@ export async function runMigrations({ fresh = false } = {}) {
       'ALTER TABLE settings ADD COLUMN enable_schedule_overlay TINYINT(1) DEFAULT 1',
       'ALTER TABLE settings ADD COLUMN schedule_overlay_interval INT DEFAULT 10',
       'ALTER TABLE settings ADD COLUMN schedule_overlay_duration INT DEFAULT 12',
+      'ALTER TABLE settings ADD COLUMN live_title_template VARCHAR(255) DEFAULT \'🔴 AO VIVO: {title} | ASSISTA AGORA!\'',
+      'ALTER TABLE settings ADD COLUMN enable_dynamic_tags TINYINT(1) DEFAULT 1',
+      'ALTER TABLE settings ADD COLUMN default_live_tags TEXT',
+      'ALTER TABLE settings ADD COLUMN enable_dynamic_description TINYINT(1) DEFAULT 1',
+      'ALTER TABLE settings ADD COLUMN default_live_description_template TEXT',
       'ALTER TABLE queue_items ADD COLUMN last_position_seconds INT DEFAULT 0',
       'ALTER TABLE queue_items ADD COLUMN start_at_seconds INT DEFAULT 0'
     ];

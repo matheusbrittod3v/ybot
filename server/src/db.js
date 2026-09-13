@@ -88,6 +88,11 @@ const DEFAULT_SETTINGS = {
   enableScheduleOverlay: true,
   scheduleOverlayInterval: 5,
   scheduleOverlayDuration: 12,
+  liveTitleTemplate: '🔴 AO VIVO: "{title}" | ASSISTA AGORA!',
+  enableDynamicTags: true,
+  defaultLiveTags: 'ao vivo, 24 horas, debate, podcast, brasil, cortes, entrevista, politica, inteligencia ltda, flow podcast, noticias, debate ao vivo, melhores momentos, tv braza',
+  enableDynamicDescription: true,
+  defaultLiveDescriptionTemplate: '🔴 TV BRAZA 24/7 AO VIVO\n\n▶️ Assistindo agora: {title}\n\n🔔 Inscreva-se no canal e ative o sininho para acompanhar os melhores debates, podcasts e entrevistas 24 horas ininterruptas!\n\n#aovivo #podcast #debate #brasil #noticias',
   adminPassword: process.env.ADMIN_PASSWORD || 'admin123'
 };
 
@@ -243,6 +248,11 @@ class Database {
         enableScheduleOverlay: r.enable_schedule_overlay !== undefined ? Boolean(r.enable_schedule_overlay) : true,
         scheduleOverlayInterval: Number(r.schedule_overlay_interval) || 10,
         scheduleOverlayDuration: Number(r.schedule_overlay_duration) || 12,
+        liveTitleTemplate: r.live_title_template || '🔴 AO VIVO: "{title}" | ASSISTA AGORA!',
+        enableDynamicTags: r.enable_dynamic_tags !== undefined ? Boolean(r.enable_dynamic_tags) : true,
+        defaultLiveTags: r.default_live_tags !== undefined && r.default_live_tags !== null ? r.default_live_tags : 'ao vivo, 24 horas, debate, podcast, brasil, cortes, entrevista, politica, inteligencia ltda, flow podcast, noticias, debate ao vivo, melhores momentos, tv braza',
+        enableDynamicDescription: r.enable_dynamic_description !== undefined ? Boolean(r.enable_dynamic_description) : true,
+        defaultLiveDescriptionTemplate: r.default_live_description_template !== undefined && r.default_live_description_template !== null ? r.default_live_description_template : '🔴 TV BRAZA 24/7 AO VIVO\n\n▶️ Assistindo agora: {title}\n\n🔔 Inscreva-se no canal e ative o sininho para acompanhar os melhores debates, podcasts e entrevistas 24 horas ininterruptas!\n\n#aovivo #podcast #debate #brasil #noticias',
         adminPassword: r.admin_password || 'admin123'
       };
     }
@@ -384,7 +394,10 @@ class Database {
           fps = ?, video_bitrate = ?, audio_bitrate = ?, auto_delete_finished = ?,
           enable_watermark = ?, watermark_text = ?, custom_logo_path = ?, auto_loop_standby = ?,
           enable_sponsor_block = ?, default_stream_mode = ?, enable_schedule_overlay = ?,
-          schedule_overlay_interval = ?, schedule_overlay_duration = ?, admin_password = ?
+          schedule_overlay_interval = ?, schedule_overlay_duration = ?,
+          live_title_template = ?, enable_dynamic_tags = ?, default_live_tags = ?,
+          enable_dynamic_description = ?, default_live_description_template = ?,
+          admin_password = ?
         WHERE id = 1`,
         [
           s.youtubeStreamKey, s.youtubeRtmpUrl, s.youtubeBroadcastVideoId,
@@ -393,7 +406,13 @@ class Database {
           s.fps, s.videoBitrate, s.audioBitrate, s.autoDeleteFinished,
           s.enableWatermark, s.watermarkText, s.customLogoPath, s.autoLoopStandby,
           s.enableSponsorBlock, s.defaultStreamMode, s.enableScheduleOverlay !== false,
-          s.scheduleOverlayInterval || 10, s.scheduleOverlayDuration || 12, s.adminPassword
+          s.scheduleOverlayInterval || 10, s.scheduleOverlayDuration || 12,
+          s.liveTitleTemplate || '🔴 AO VIVO: "{title}" | ASSISTA AGORA!',
+          s.enableDynamicTags !== false,
+          s.defaultLiveTags || '',
+          s.enableDynamicDescription !== false,
+          s.defaultLiveDescriptionTemplate || '',
+          s.adminPassword
         ]
       ).catch(err => console.error('[DB MySQL] Erro ao atualizar settings:', err.message));
     }

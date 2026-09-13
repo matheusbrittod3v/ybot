@@ -105,6 +105,21 @@ const elCfgGoogleRefreshToken = document.getElementById('cfg-google-refresh-toke
 const elBtnDetectLive = document.getElementById('btn-detect-live');
 const elSpinnerDetectLive = document.getElementById('spinner-detect-live');
 
+// CTR & SEO Booster Settings
+const elCfgTitleTemplate = document.getElementById('cfg-title-template');
+const elTitleTemplateCounter = document.getElementById('title-template-counter');
+const elLiveTitlePreview = document.getElementById('live-title-preview');
+const elPreviewCharBadge = document.getElementById('preview-char-badge');
+const elCfgEnableDynamicTags = document.getElementById('cfg-enable-dynamic-tags');
+const elPanelDynamicTags = document.getElementById('panel-dynamic-tags');
+const elCfgDefaultTags = document.getElementById('cfg-default-tags');
+const elTagsCharCounter = document.getElementById('tags-char-counter');
+const elBtnInsertViralTags = document.getElementById('btn-insert-viral-tags');
+const elCfgEnableDynamicDesc = document.getElementById('cfg-enable-dynamic-desc');
+const elPanelDynamicDesc = document.getElementById('panel-dynamic-desc');
+const elCfgDescTemplate = document.getElementById('cfg-desc-template');
+const elCtrPresetsContainer = document.getElementById('ctr-presets-container');
+
 // Título da Live & Upload de Thumbnail no Preview
 const elCurrentLiveTitle = document.getElementById('current-live-title');
 const elInputLiveTitle = document.getElementById('input-live-title');
@@ -1381,6 +1396,18 @@ async function openSettingsModal() {
       if (elCfgGoogleClientSecret) elCfgGoogleClientSecret.value = s.googleClientSecret || '';
       if (elCfgGoogleRefreshToken) elCfgGoogleRefreshToken.value = s.googleRefreshToken || '';
 
+      // Configurações de CTR & Tags Virais
+      if (elCfgTitleTemplate) elCfgTitleTemplate.value = s.liveTitleTemplate || '🔴 AO VIVO: "{title}" | ASSISTA AGORA!';
+      if (elCfgEnableDynamicTags) elCfgEnableDynamicTags.checked = s.enableDynamicTags !== false;
+      if (elPanelDynamicTags) elPanelDynamicTags.style.display = (s.enableDynamicTags !== false) ? 'block' : 'none';
+      if (elCfgDefaultTags) elCfgDefaultTags.value = s.defaultLiveTags || '';
+      if (elCfgEnableDynamicDesc) elCfgEnableDynamicDesc.checked = s.enableDynamicDescription !== false;
+      if (elPanelDynamicDesc) elPanelDynamicDesc.style.display = (s.enableDynamicDescription !== false) ? 'block' : 'none';
+      if (elCfgDescTemplate) elCfgDescTemplate.value = s.defaultLiveDescriptionTemplate || '';
+
+      updateCtrTitlePreview();
+      updateTagsCounter();
+
       checkCookiesStatus();
       elModalSettings.classList.remove('hidden');
     }
@@ -1405,6 +1432,11 @@ async function handleSaveSettings(e) {
     scheduleOverlayDuration: elCfgScheduleDuration ? Number(elCfgScheduleDuration.value) || 12 : 12,
     youtubeBroadcastVideoId: elCfgBroadcastVideoId ? elCfgBroadcastVideoId.value.trim() : '',
     defaultLiveTitlePrefix: elCfgTitlePrefix ? elCfgTitlePrefix.value : '',
+    liveTitleTemplate: elCfgTitleTemplate ? elCfgTitleTemplate.value.trim() : '🔴 AO VIVO: "{title}" | ASSISTA AGORA!',
+    enableDynamicTags: elCfgEnableDynamicTags ? elCfgEnableDynamicTags.checked : true,
+    defaultLiveTags: elCfgDefaultTags ? elCfgDefaultTags.value.trim() : '',
+    enableDynamicDescription: elCfgEnableDynamicDesc ? elCfgEnableDynamicDesc.checked : true,
+    defaultLiveDescriptionTemplate: elCfgDescTemplate ? elCfgDescTemplate.value.trim() : '',
     googleClientId: elCfgGoogleClientId ? elCfgGoogleClientId.value.trim() : '',
     googleClientSecret: elCfgGoogleClientSecret ? elCfgGoogleClientSecret.value.trim() : '',
     googleRefreshToken: elCfgGoogleRefreshToken ? elCfgGoogleRefreshToken.value.trim() : ''
@@ -1425,6 +1457,90 @@ async function handleSaveSettings(e) {
   } catch (err) {
     showToast('Erro ao salvar configurações', 'error');
   }
+}
+
+function updateCtrTitlePreview() {
+  if (!elCfgTitleTemplate || !elLiveTitlePreview) return;
+  const template = elCfgTitleTemplate.value || '🔴 AO VIVO: "{title}" | ASSISTA AGORA!';
+  const prefix = elCfgTitlePrefix ? elCfgTitlePrefix.value : 'TV BRAZA AO VIVO: ';
+  const sampleTitle = 'DEBATE HISTÓRICO: O QUE É MELHOR PARA O BRASIL?';
+
+  let preview = template.replace(/\{title\}/g, sampleTitle).replace(/\{prefix\}/g, prefix);
+  const len = preview.length;
+  if (elTitleTemplateCounter) {
+    elTitleTemplateCounter.textContent = `${elCfgTitleTemplate.value.length}/100`;
+  }
+  if (elPreviewCharBadge) {
+    if (len > 100) {
+      elPreviewCharBadge.textContent = `${len}/100 chars (Cortará)`;
+      elPreviewCharBadge.style.color = '#ef4444';
+    } else {
+      elPreviewCharBadge.textContent = `${len}/100 chars (OK)`;
+      elPreviewCharBadge.style.color = '#34d399';
+    }
+  }
+  elLiveTitlePreview.textContent = preview.substring(0, 100);
+
+  if (elCtrPresetsContainer) {
+    elCtrPresetsContainer.querySelectorAll('.btn-ctr-preset').forEach(btn => {
+      if (btn.getAttribute('data-template') === elCfgTitleTemplate.value) {
+        btn.classList.add('active');
+      } else {
+        btn.classList.remove('active');
+      }
+    });
+  }
+}
+
+function updateTagsCounter() {
+  if (!elCfgDefaultTags || !elTagsCharCounter) return;
+  const len = elCfgDefaultTags.value.length;
+  elTagsCharCounter.textContent = `${len}/500`;
+  if (len > 500) {
+    elTagsCharCounter.style.color = '#ef4444';
+  } else {
+    elTagsCharCounter.style.color = 'var(--text-dim)';
+  }
+}
+
+if (elCfgTitleTemplate) {
+  elCfgTitleTemplate.addEventListener('input', updateCtrTitlePreview);
+}
+if (elCfgTitlePrefix) {
+  elCfgTitlePrefix.addEventListener('input', updateCtrTitlePreview);
+}
+if (elCfgDefaultTags) {
+  elCfgDefaultTags.addEventListener('input', updateTagsCounter);
+}
+if (elCtrPresetsContainer) {
+  elCtrPresetsContainer.addEventListener('click', (e) => {
+    const btn = e.target.closest('.btn-ctr-preset');
+    if (btn) {
+      const tmpl = btn.getAttribute('data-template');
+      if (tmpl && elCfgTitleTemplate) {
+        elCfgTitleTemplate.value = tmpl;
+        updateCtrTitlePreview();
+      }
+    }
+  });
+}
+if (elCfgEnableDynamicTags && elPanelDynamicTags) {
+  elCfgEnableDynamicTags.addEventListener('change', () => {
+    elPanelDynamicTags.style.display = elCfgEnableDynamicTags.checked ? 'block' : 'none';
+  });
+}
+if (elCfgEnableDynamicDesc && elPanelDynamicDesc) {
+  elCfgEnableDynamicDesc.addEventListener('change', () => {
+    elPanelDynamicDesc.style.display = elCfgEnableDynamicDesc.checked ? 'block' : 'none';
+  });
+}
+if (elBtnInsertViralTags && elCfgDefaultTags) {
+  elBtnInsertViralTags.addEventListener('click', () => {
+    const viralKeywords = 'ao vivo, 24 horas, debate, podcast, brasil, cortes, entrevista, politica, inteligencia ltda, flow podcast, noticias, debate ao vivo, melhores momentos, tv braza, urgente, exclusivo';
+    elCfgDefaultTags.value = viralKeywords;
+    updateTagsCounter();
+    showToast('Tags virais de alto CTR preenchidas!', 'info');
+  });
 }
 
 // Botão de Detecção Automática da Live Ativa no YouTube

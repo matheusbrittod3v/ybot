@@ -232,14 +232,67 @@ class YouTubeMetadataUpdater {
   }
 
   /**
-   * Atualiza o Título da Live no YouTube Studio
+  /**
+   * Gera lista de tags otimizadas de alto CTR para a Live
    */
-  async updateTitle(videoId, newTitle, isRetry = false) {
+  generateLiveTags(itemTitle, settings) {
+    if (settings.enableDynamicTags === false) return null;
+
+    const baseTags = (settings.defaultLiveTags || '')
+      .split(',')
+      .map(t => t.trim())
+      .filter(t => t.length > 0);
+
+    const dynamicTags = [];
+    if (itemTitle) {
+      const cleanTitle = itemTitle.replace(/[[\]()#|:-]/g, ' ');
+      const words = cleanTitle
+        .split(/\s+/)
+        .map(w => w.trim().toLowerCase())
+        .filter(w => w.length >= 4 && !['para', 'com', 'onde', 'qual', 'quem', 'pelo', 'pela', 'mais', 'como', 'isso', 'esse', 'essa', 'tudo', 'sobre'].includes(w));
+      
+      if (itemTitle.length <= 40) {
+        dynamicTags.push(itemTitle.toLowerCase());
+      }
+      dynamicTags.push(...words);
+    }
+
+    const combined = Array.from(new Set([...dynamicTags, ...baseTags]));
+    const finalTags = [];
+    let charCount = 0;
+    for (const tag of combined) {
+      if (charCount + tag.length + 1 <= 480 && finalTags.length < 50) {
+        finalTags.push(tag);
+        charCount += tag.length + 1;
+      }
+    }
+    return finalTags.length > 0 ? finalTags : null;
+  }
+
+  /**
+   * Gera descrição dinâmica para a Live com base no template
+   */
+  generateLiveDescription(item, settings) {
+    if (settings.enableDynamicDescription === false) return null;
+    const template = settings.defaultLiveDescriptionTemplate;
+    if (!template) return null;
+
+    return template
+      .replace(/\{title\}/g, item.title || 'Ao Vivo')
+      .replace(/\{url\}/g, item.url || '')
+      .replace(/\{channel\}/g, item.channel || 'TV Braza')
+      .substring(0, 5000);
+  }
+
+  /**
+   * Atualiza o Título e Metadados da Live no YouTube Studio
+   */
+  async updateTitle(videoId, newTitle, tags = null, description = null, isRetry = false) {
     if (!videoId || !newTitle) return false;
 
     const token = await this.getValidAccessToken();
     if (!token) {
-      console.log(`[YouTube Updater] [Simulação] Título da Live atualizado para: "${newTitle}" (Configure o Google OAuth para enviar à API do YouTube)`);
+      console.log(`[YouTube Updater] [Simulação] Metadados da Live atualizados: "${newTitle}"`);
       return false;
     }
 
@@ -264,20 +317,28 @@ class YouTubeMetadataUpdater {
           db.updateSettings({ youtubeBroadcastVideoId: '' });
           const fresh = await this.detectAndSaveActiveBroadcast();
           if (fresh && fresh.id && fresh.id !== videoId) {
-            return this.updateTitle(fresh.id, newTitle, true);
+            return this.updateTitle(fresh.id, newTitle, tags, description, true);
           }
         }
         return false;
       }
 
-      // 2. Atualiza o título preservando categoria e descrição
+      // 2. Atualiza o título preservando ou atualizando categoria, tags e descrição
+      const snippetUpdate = {
+        title: newTitle.substring(0, 100), // Limite do YouTube é 100 caracteres
+        categoryId: currentSnippet.categoryId || '24',
+        description: (description !== null && description !== undefined) ? description : (currentSnippet.description || '')
+      };
+
+      if (Array.isArray(tags) && tags.length > 0) {
+        snippetUpdate.tags = tags;
+      } else if (currentSnippet.tags) {
+        snippetUpdate.tags = currentSnippet.tags;
+      }
+
       const updatePayload = {
         id: videoId,
-        snippet: {
-          title: newTitle.substring(0, 100), // Limite do YouTube é 100 caracteres
-          categoryId: currentSnippet.categoryId || '24',
-          description: currentSnippet.description || ''
-        }
+        snippet: snippetUpdate
       };
 
       const putRes = await fetch('https://www.googleapis.com/youtube/v3/videos?part=snippet', {
@@ -290,15 +351,15 @@ class YouTubeMetadataUpdater {
       });
 
       if (putRes.ok) {
-        console.log(`[YouTube Updater] ✅ Título da Live atualizado no YouTube com sucesso: "${newTitle}"`);
+        console.log(`[YouTube Updater] ✅ Metadados da Live atualizados no YouTube com sucesso: "${newTitle}"${Array.isArray(tags) ? ` (${tags.length} tags de CTR)` : ''}`);
         return true;
       } else {
         const err = await putRes.text();
-        console.warn(`[YouTube Updater] Erro ao atualizar título na API do YouTube: ${err}`);
+        console.warn(`[YouTube Updater] Erro ao atualizar metadados na API do YouTube: ${err}`);
         return false;
       }
     } catch (err) {
-      console.error('[YouTube Updater] Erro ao atualizar título:', err.message);
+      console.error('[YouTube Updater] Erro ao atualizar metadados:', err.message);
       return false;
     }
   }
@@ -421,8 +482,22 @@ class YouTubeMetadataUpdater {
     const videoId = await this.getActiveBroadcastId();
     const settings = db.getSettings();
     const prefix = settings.defaultLiveTitlePrefix || 'TV BRAZA AO VIVO: ';
-    const rawTitle = item.liveTitle || (item.title ? (item.title.startsWith(prefix) ? item.title : `${prefix}${item.title}`) : 'TV BRAZA AO VIVO');
-    const liveTitle = rawTitle.substring(0, 100);
+    const template = settings.liveTitleTemplate || '🔴 AO VIVO: "{title}" | ASSISTA AGORA!';
+
+    let formattedTitle = '';
+    if (item.liveTitle) {
+      formattedTitle = item.liveTitle;
+    } else if (item.title) {
+      if (template.includes('{title}')) {
+        formattedTitle = template.replace('{title}', item.title).replace('{prefix}', prefix);
+      } else {
+        formattedTitle = item.title.startsWith(prefix) ? item.title : `${prefix}${item.title}`;
+      }
+    } else {
+      formattedTitle = 'TV BRAZA AO VIVO';
+    }
+
+    const liveTitle = formattedTitle.trim().substring(0, 100);
 
     console.log(`[YouTube Updater] Sincronizando metadados da nova atração: "${liveTitle}"`);
 
@@ -437,9 +512,11 @@ class YouTubeMetadataUpdater {
       return;
     }
 
-    // 1. Atualiza Título no YouTube
+    // 1. Atualiza Título, Tags e Descrição de Alto CTR no YouTube
     if (liveTitle) {
-      await this.updateTitle(videoId, liveTitle);
+      const liveTags = this.generateLiveTags(item.title, settings);
+      const liveDescription = this.generateLiveDescription(item, settings);
+      await this.updateTitle(videoId, liveTitle, liveTags, liveDescription);
     }
 
     // 2. Atualiza Thumbnail no YouTube automaticamente (customizada ou original em HD)
