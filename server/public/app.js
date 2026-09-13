@@ -83,6 +83,11 @@ const elCfgWatermark = document.getElementById('cfg-watermark');
 const elCfgAutoDelete = document.getElementById('cfg-auto-delete');
 const elCfgAutoStandby = document.getElementById('cfg-auto-standby');
 const elBtnToggleKeyEye = document.getElementById('btn-toggle-key-eye');
+const elCfgEnableTwitch = document.getElementById('cfg-enable-twitch');
+const elPanelTwitchConfig = document.getElementById('panel-twitch-config');
+const elCfgTwitchRtmpUrl = document.getElementById('cfg-twitch-rtmp-url');
+const elCfgTwitchStreamKey = document.getElementById('cfg-twitch-stream-key');
+const elBtnToggleTwitchKeyEye = document.getElementById('btn-toggle-twitch-key-eye');
 
 // Watermark Customization
 const elCfgWatermarkText = document.getElementById('cfg-watermark-text');
@@ -665,6 +670,27 @@ function setupEventListeners() {
   elBtnToggleKeyEye.addEventListener('click', () => {
     elCfgStreamKey.type = elCfgStreamKey.type === 'password' ? 'text' : 'password';
   });
+
+  if (elBtnToggleTwitchKeyEye && elCfgTwitchStreamKey) {
+    elBtnToggleTwitchKeyEye.addEventListener('click', () => {
+      elCfgTwitchStreamKey.type = elCfgTwitchStreamKey.type === 'password' ? 'text' : 'password';
+    });
+  }
+
+  document.querySelectorAll('.btn-twitch-preset').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const url = btn.getAttribute('data-url');
+      if (url && elCfgTwitchRtmpUrl) {
+        elCfgTwitchRtmpUrl.value = url;
+      }
+    });
+  });
+
+  if (elCfgEnableTwitch && elPanelTwitchConfig) {
+    elCfgEnableTwitch.addEventListener('change', () => {
+      elPanelTwitchConfig.style.display = elCfgEnableTwitch.checked ? 'block' : 'none';
+    });
+  }
 
   elFormSettings.addEventListener('submit', handleSaveSettings);
 
@@ -1408,6 +1434,12 @@ async function openSettingsModal() {
       updateCtrTitlePreview();
       updateTagsCounter();
 
+      // Multistream Twitch
+      if (elCfgEnableTwitch) elCfgEnableTwitch.checked = Boolean(s.enableTwitchStream);
+      if (elPanelTwitchConfig) elPanelTwitchConfig.style.display = s.enableTwitchStream ? 'block' : 'none';
+      if (elCfgTwitchRtmpUrl) elCfgTwitchRtmpUrl.value = s.twitchRtmpUrl || 'rtmp://live.twitch.tv/app/';
+      if (elCfgTwitchStreamKey) elCfgTwitchStreamKey.value = s.twitchStreamKey || '';
+
       checkCookiesStatus();
       elModalSettings.classList.remove('hidden');
     }
@@ -1421,6 +1453,9 @@ async function handleSaveSettings(e) {
   const updates = {
     youtubeStreamKey: elCfgStreamKey.value.trim(),
     youtubeRtmpUrl: elCfgRtmpUrl.value.trim(),
+    enableTwitchStream: elCfgEnableTwitch ? elCfgEnableTwitch.checked : false,
+    twitchRtmpUrl: elCfgTwitchRtmpUrl ? elCfgTwitchRtmpUrl.value.trim() : 'rtmp://live.twitch.tv/app/',
+    twitchStreamKey: elCfgTwitchStreamKey ? elCfgTwitchStreamKey.value.trim() : '',
     resolution: elCfgResolution.value,
     videoBitrate: elCfgBitrate.value,
     enableWatermark: elCfgWatermark.checked,

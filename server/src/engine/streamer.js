@@ -326,14 +326,57 @@ class StreamerEngine {
     }
   }
 
-  getStreamTarget() {
+  getStreamTargets() {
     const settings = db.getSettings();
-    if (!settings.youtubeStreamKey) {
-      return null;
+    const targets = [];
+
+    // 1. Destino Principal: YouTube Live
+    if (settings.youtubeStreamKey) {
+      const cleanKey = settings.youtubeStreamKey.trim();
+      const rtmpUrl = (settings.youtubeRtmpUrl || 'rtmp://a.rtmp.youtube.com/live2').replace(/\/+$/, '');
+      targets.push({
+        name: 'YouTube',
+        url: `${rtmpUrl}/${cleanKey}`,
+        masked: `${rtmpUrl}/****`
+      });
     }
-    const cleanKey = settings.youtubeStreamKey.trim();
-    let rtmpUrl = (settings.youtubeRtmpUrl || 'rtmp://a.rtmp.youtube.com/live2').replace(/\/+$/, '');
-    return `${rtmpUrl}/${cleanKey}`;
+
+    // 2. Destino Secundário: Twitch Multistream
+    if (settings.enableTwitchStream && settings.twitchStreamKey) {
+      const cleanTwitchKey = settings.twitchStreamKey.trim();
+      const twitchUrl = (settings.twitchRtmpUrl || 'rtmp://live.twitch.tv/app/').replace(/\/+$/, '');
+      targets.push({
+        name: 'Twitch',
+        url: `${twitchUrl}/${cleanTwitchKey}`,
+        masked: `${twitchUrl}/****`
+      });
+    }
+
+    return targets;
+  }
+
+  getStreamTarget() {
+    const targets = this.getStreamTargets();
+    return targets.length > 0 ? targets[0].url : null;
+  }
+
+  appendRtmpOutputs(args) {
+    const targets = this.getStreamTargets();
+    if (targets.length === 0) {
+      args.push('-f', 'null', '-');
+      return targets;
+    }
+
+    // Primeiro destino (ex: YouTube)
+    args.push('-f', 'flv', targets[0].url);
+
+    // Demais destinos (ex: Twitch Multistream):
+    // Duplica o fluxo codificado usando -c:v copy -c:a copy com ZERO re-encoding e ZERO CPU extra!
+    for (let i = 1; i < targets.length; i++) {
+      args.push('-c:v', 'copy', '-c:a', 'copy', '-f', 'flv', targets[i].url);
+    }
+
+    return targets;
   }
 
   async start() {
@@ -613,10 +656,10 @@ class StreamerEngine {
         args.push('-vf', finalVf);
       }
 
-      if (rtmpTarget) {
-        args.push('-f', 'flv', rtmpTarget);
-      } else {
-        args.push('-f', 'null', '-');
+      const activeTargets = this.appendRtmpOutputs(args);
+      if (activeTargets.length > 0) {
+        const targetSummary = activeTargets.map(t => `${t.name} (${t.masked})`).join(' + ');
+        console.log(`[Streamer] 📡 Transmitindo vídeo para: ${targetSummary}`);
       }
 
       // Mata o Standby no exato instante anterior a disparar o FFmpeg do novo vídeo
@@ -903,16 +946,15 @@ class StreamerEngine {
       ];
     }
 
-    if (rtmpTarget) {
-      const maskedTarget = rtmpTarget.replace(/live2\/[a-zA-Z0-9_-]+$/, 'live2/****');
-      console.log(`[Streamer Standby] 📡 Transmitindo Standby para: ${maskedTarget}`);
-      args.push('-f', 'flv', rtmpTarget);
+    const activeTargets = this.appendRtmpOutputs(args);
+    if (activeTargets.length > 0) {
+      const targetSummary = activeTargets.map(t => `${t.name} (${t.masked})`).join(' + ');
+      console.log(`[Streamer Standby] 📡 Transmitindo Standby para: ${targetSummary}`);
     } else {
-      console.warn('[Streamer Standby] ⚠️ Chave RTMP ausente no Standby. Buscando automaticamente no YouTube Studio...');
-      args.push('-f', 'null', '-');
+      console.warn('[Streamer Standby] ⚠️ Nenhuma Chave RTMP ativa. Buscando automaticamente no YouTube Studio...');
       youtubeUpdater.detectAndSaveActiveBroadcast().then((broadcast) => {
         if (broadcast && this.getStreamTarget() && this.currentMode === 'STANDBY') {
-          console.log('[Streamer Standby] Stream Key obtida com sucesso. Conectando Standby à Live do YouTube...');
+          console.log('[Streamer Standby] Stream Key obtida com sucesso. Conectando Standby à Live...');
           this.streamStandby();
         }
       }).catch(() => {});

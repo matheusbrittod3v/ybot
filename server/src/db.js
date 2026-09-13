@@ -93,6 +93,9 @@ const DEFAULT_SETTINGS = {
   defaultLiveTags: 'ao vivo, 24 horas, debate, podcast, brasil, cortes, entrevista, politica, inteligencia ltda, flow podcast, noticias, debate ao vivo, melhores momentos, tv braza',
   enableDynamicDescription: true,
   defaultLiveDescriptionTemplate: '🔴 TV BRAZA 24/7 AO VIVO\n\n▶️ Assistindo agora: {title}\n\n🔔 Inscreva-se no canal e ative o sininho para acompanhar os melhores debates, podcasts e entrevistas 24 horas ininterruptas!\n\n#aovivo #podcast #debate #brasil #noticias',
+  enableTwitchStream: false,
+  twitchRtmpUrl: process.env.TWITCH_RTMP_URL || 'rtmp://live.twitch.tv/app/',
+  twitchStreamKey: process.env.TWITCH_STREAM_KEY || '',
   adminPassword: process.env.ADMIN_PASSWORD || 'admin123'
 };
 
@@ -253,6 +256,9 @@ class Database {
         defaultLiveTags: r.default_live_tags !== undefined && r.default_live_tags !== null ? r.default_live_tags : 'ao vivo, 24 horas, debate, podcast, brasil, cortes, entrevista, politica, inteligencia ltda, flow podcast, noticias, debate ao vivo, melhores momentos, tv braza',
         enableDynamicDescription: r.enable_dynamic_description !== undefined ? Boolean(r.enable_dynamic_description) : true,
         defaultLiveDescriptionTemplate: r.default_live_description_template !== undefined && r.default_live_description_template !== null ? r.default_live_description_template : '🔴 TV BRAZA 24/7 AO VIVO\n\n▶️ Assistindo agora: {title}\n\n🔔 Inscreva-se no canal e ative o sininho para acompanhar os melhores debates, podcasts e entrevistas 24 horas ininterruptas!\n\n#aovivo #podcast #debate #brasil #noticias',
+        enableTwitchStream: Boolean(r.enable_twitch_stream),
+        twitchRtmpUrl: r.twitch_rtmp_url || 'rtmp://live.twitch.tv/app/',
+        twitchStreamKey: r.twitch_stream_key || '',
         adminPassword: r.admin_password || 'admin123'
       };
     }
@@ -397,6 +403,7 @@ class Database {
           schedule_overlay_interval = ?, schedule_overlay_duration = ?,
           live_title_template = ?, enable_dynamic_tags = ?, default_live_tags = ?,
           enable_dynamic_description = ?, default_live_description_template = ?,
+          enable_twitch_stream = ?, twitch_rtmp_url = ?, twitch_stream_key = ?,
           admin_password = ?
         WHERE id = 1`,
         [
@@ -412,6 +419,9 @@ class Database {
           s.defaultLiveTags || '',
           s.enableDynamicDescription !== false,
           s.defaultLiveDescriptionTemplate || '',
+          Boolean(s.enableTwitchStream),
+          s.twitchRtmpUrl || 'rtmp://live.twitch.tv/app/',
+          s.twitchStreamKey || '',
           s.adminPassword
         ]
       ).catch(err => console.error('[DB MySQL] Erro ao atualizar settings:', err.message));

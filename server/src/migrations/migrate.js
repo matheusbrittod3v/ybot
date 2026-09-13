@@ -84,6 +84,9 @@ export async function runMigrations({ fresh = false } = {}) {
       'ALTER TABLE settings ADD COLUMN default_live_tags TEXT',
       'ALTER TABLE settings ADD COLUMN enable_dynamic_description TINYINT(1) DEFAULT 1',
       'ALTER TABLE settings ADD COLUMN default_live_description_template TEXT',
+      'ALTER TABLE settings ADD COLUMN enable_twitch_stream TINYINT(1) DEFAULT 0',
+      'ALTER TABLE settings ADD COLUMN twitch_rtmp_url VARCHAR(255) DEFAULT \'rtmp://live.twitch.tv/app/\'',
+      'ALTER TABLE settings ADD COLUMN twitch_stream_key VARCHAR(255) DEFAULT \'\'',
       'ALTER TABLE queue_items ADD COLUMN last_position_seconds INT DEFAULT 0',
       'ALTER TABLE queue_items ADD COLUMN start_at_seconds INT DEFAULT 0'
     ];
