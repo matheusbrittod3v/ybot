@@ -199,6 +199,8 @@ class StreamerEngine {
     this.isReloading = false;
     this.isResolving = false;
     this.watchdogInterval = null;
+    this.prefetchCache = new Map();
+    this.isPrefetching = false;
 
     downloader.onEvent((event, payload) => {
       if (event === 'download_complete') {
@@ -214,7 +216,7 @@ class StreamerEngine {
     if (this.watchdogInterval) clearInterval(this.watchdogInterval);
     this.watchdogInterval = setInterval(() => {
       if (!this.shouldRun) return;
-      if (!this.ffmpegProc && !this.isResolving) {
+      if (!this.ffmpegProc) {
         console.warn('[Streamer Watchdog] ⚠️ FFmpeg inativo detectado! Restaurando vinheta Standby para manter a Live 100% online...');
         this.streamStandby();
       }
@@ -242,6 +244,40 @@ class StreamerEngine {
       clearInterval(this.watchdogInterval);
       this.watchdogInterval = null;
     }
+  }
+
+  /**
+   * Pré-resolução em background (Zero-Gap Playout)
+   * Resolve as URLs diretas do próximo item da fila antecipadamente para transição instantânea (0ms).
+   */
+  triggerPrefetchNext() {
+    if (!this.shouldRun || this.isPrefetching) return;
+    const queue = db.getQueue();
+    const nextItem = queue.find(i => (!this.currentItem || i.id !== this.currentItem.id) && i.status !== 'finished' && i.status !== 'error');
+    if (!nextItem) return;
+
+    const hasLocalFile = Boolean(nextItem.filePath && fs.existsSync(nextItem.filePath));
+    if (hasLocalFile) return;
+
+    if (this.prefetchCache.has(nextItem.id)) {
+      const cached = this.prefetchCache.get(nextItem.id);
+      if (Date.now() - cached.timestamp < 15 * 60 * 1000) {
+        return;
+      }
+    }
+
+    this.isPrefetching = true;
+    console.log(`[Streamer Pre-fetch] 🚀 Pré-resolvendo em segundo plano: "${nextItem.title}"...`);
+    resolveDirectStreams(nextItem.url).then(data => {
+      if (data && data.videoUrl) {
+        this.prefetchCache.set(nextItem.id, { data, timestamp: Date.now() });
+        console.log(`[Streamer Pre-fetch] ✅ "${nextItem.title}" pré-resolvido em cache! Troca será instantânea.`);
+      }
+    }).catch(err => {
+      console.warn('[Streamer Pre-fetch] Falha ao pré-resolver próximo vídeo:', err.message);
+    }).finally(() => {
+      this.isPrefetching = false;
+    });
   }
 
   onEvent(callback) {
@@ -384,14 +420,19 @@ class StreamerEngine {
     if (this.currentMode === 'VIDEO' && this.currentItem && this.currentItem.id === item.id && this.ffmpegProc) {
       return;
     }
+
+    // Zero-Gap: Se nenhum processo FFmpeg estiver ativo no ar, aciona o Standby imediatamente
+    // para que a conexão RTMP com o YouTube nunca caia enquanto o novo vídeo é preparado
+    if (!this.ffmpegProc && this.currentMode !== 'STANDBY') {
+      console.log('[Streamer Zero-Gap] 🛡️ Mantendo Standby ativo no ar enquanto prepara o próximo vídeo...');
+      this.streamStandby();
+    }
+
     this.isResolving = true;
     const hasLocalFile = Boolean(item.filePath && fs.existsSync(item.filePath));
     const isDirect = !hasLocalFile || item.streamMode === 'direct';
 
     console.log(`[Streamer] PREPARANDO TRANSMISSÃO: "${item.title}" ${isDirect ? '[Modo: ⚡ Stream Direto (Sem Anúncios)]' : '[Arquivo Local]'}`);
-
-    // Mantém vinheta Standby apenas se já estiver rodando; evita conexões efêmeras de 1s
-    // que causam queda momentânea da taxa de bits para 0 Kbps no YouTube
 
     try {
       let rtmpTarget = this.getStreamTarget();
@@ -406,11 +447,25 @@ class StreamerEngine {
       let pipeSourceProc = null;
 
       if (isDirect) {
-        console.log(`[Streamer] ⚡ Invocando motor de Stream Direto para: ${item.url}`);
-        const streamData = await resolveDirectStreams(item.url);
+        let streamData = null;
+
+        // 1. Verifica se o vídeo já foi pré-resolvido em cache (transição 0ms)
+        if (this.prefetchCache && this.prefetchCache.has(item.id)) {
+          const cached = this.prefetchCache.get(item.id);
+          if (Date.now() - cached.timestamp < 15 * 60 * 1000) {
+            console.log(`[Streamer Pre-fetch] ⚡ Utilizando fluxo direto pré-resolvido em cache para: "${item.title}"`);
+            streamData = cached.data;
+          }
+          this.prefetchCache.delete(item.id);
+        }
+
+        if (!streamData) {
+          console.log(`[Streamer] ⚡ Invocando motor de Stream Direto para: ${item.url}`);
+          streamData = await resolveDirectStreams(item.url);
+        }
 
         if (streamData && streamData.videoUrl) {
-          console.log(`[Streamer Direct] Fluxos resolvidos via ${streamData.provider} (${streamData.resolution})! Iniciando broadcast...`);
+          console.log(`[Streamer Direct] Fluxos resolvidos via ${streamData.provider} (${streamData.resolution})! Iniciando broadcast com -re...`);
           const httpOptions = [
             '-user_agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             '-rw_timeout', '15000000',
@@ -420,9 +475,11 @@ class StreamerEngine {
           ];
           if (streamData.audioUrl && !streamData.isProgressive) {
             inputArgs = [
+              '-re',
               '-thread_queue_size', '4096',
               ...httpOptions,
               '-i', streamData.videoUrl,
+              '-re',
               '-thread_queue_size', '4096',
               ...httpOptions,
               '-i', streamData.audioUrl,
@@ -431,6 +488,7 @@ class StreamerEngine {
             ];
           } else {
             inputArgs = [
+              '-re',
               '-thread_queue_size', '4096',
               ...httpOptions,
               '-i', streamData.videoUrl
@@ -453,6 +511,7 @@ class StreamerEngine {
 
       const args = [
         ...inputArgs,
+        '-r', '30',
         '-c:v', 'libx264',
         '-preset', 'ultrafast',
         '-tune', 'zerolatency',
@@ -463,12 +522,14 @@ class StreamerEngine {
         '-pix_fmt', 'yuv420p',
         '-g', '60',
         '-keyint_min', '60',
+        '-sc_threshold', '0',
         '-threads', '0',
         '-c:a', 'aac',
         '-b:a', audioBitrate,
-        '-ar', '44100',
+        '-ar', '48000',
+        '-ac', '2',
         '-flvflags', 'no_duration_filesize',
-        '-max_muxing_queue_size', '2048'
+        '-max_muxing_queue_size', '4096'
       ];
 
       let filterSteps = [];
@@ -527,7 +588,7 @@ class StreamerEngine {
         args.push('-f', 'null', '-');
       }
 
-      // Mata a vinheta Standby imediatamente antes de disparar o FFmpeg do vídeo
+      // Mata o Standby no exato instante anterior a disparar o FFmpeg do novo vídeo
       this.killProcess();
       this.currentMode = 'VIDEO';
       this.currentItem = item;
@@ -542,6 +603,9 @@ class StreamerEngine {
       });
 
       this.broadcast('video_started', { item });
+
+      // Dispara a pré-resolução do próximo vídeo da fila após 4 segundos
+      setTimeout(() => this.triggerPrefetchNext(), 4000);
 
       youtubeUpdater.syncItemMetadata(item).catch(err => {
         console.warn('[Streamer] Erro ao sincronizar metadados no YouTube:', err.message);
@@ -565,6 +629,11 @@ class StreamerEngine {
         }
 
         this.currentItem = null;
+        // Zero-Gap: ativa imediatamente a vinheta de Standby para manter o fluxo RTMP 100% vivo sem 0 bps
+        if (this.shouldRun) {
+          console.log('[Streamer Zero-Gap] 🛡️ Mantendo Standby ativo na transição de vídeos...');
+          this.streamStandby();
+        }
         this.playNextInQueue();
       }, pipeSourceProc);
 
@@ -584,6 +653,9 @@ class StreamerEngine {
       db.updateQueueItem(item.id, { status: 'error', error: err.message });
       this.isResolving = false;
       this.currentItem = null;
+      if (this.shouldRun && !this.ffmpegProc) {
+        this.streamStandby();
+      }
       this.playNextInQueue();
     }
   }
@@ -728,6 +800,7 @@ class StreamerEngine {
         '-stream_loop', '-1',
         '-re',
         '-i', standbyFile,
+        '-r', '30',
         '-c:v', 'libx264',
         '-preset', 'ultrafast',
         '-tune', 'zerolatency',
@@ -738,12 +811,14 @@ class StreamerEngine {
         '-pix_fmt', 'yuv420p',
         '-g', '60',
         '-keyint_min', '60',
+        '-sc_threshold', '0',
         '-threads', '0',
         '-c:a', 'aac',
         '-b:a', audioBitrate,
-        '-ar', '44100',
+        '-ar', '48000',
+        '-ac', '2',
         '-flvflags', 'no_duration_filesize',
-        '-max_muxing_queue_size', '2048'
+        '-max_muxing_queue_size', '4096'
       ];
 
       if (standbyVf.length > 0) {
@@ -755,7 +830,7 @@ class StreamerEngine {
       }
     } else {
       // Standby sintético nativo do FFmpeg com tela HD TV Braza e Música Ambiente
-      const audioExpr = 'aevalsrc=\'0.05*sin(2*PI*220*t)*sin(0.3*PI*t)+0.05*sin(2*PI*277.18*t)+0.04*sin(2*PI*329.63*t)+0.03*sin(2*PI*440*t)+0.03*sin(2*PI*110*t)\':s=44100';
+      const audioExpr = 'aevalsrc=\'0.05*sin(2*PI*220*t)*sin(0.3*PI*t)+0.05*sin(2*PI*277.18*t)+0.04*sin(2*PI*329.63*t)+0.03*sin(2*PI*440*t)+0.03*sin(2*PI*110*t)\':s=48000';
       const videoFilter = [
         '[0:v]drawbox=x=0:y=0:w=1920:h=1080:color=0x070a14@1:t=fill[bg]',
         '[bg]drawbox=x=310:y=210:w=1300:h=660:color=0x0f172a@0.9:t=fill[card]',
@@ -775,6 +850,7 @@ class StreamerEngine {
         '-filter_complex', videoFilter,
         '-map', '[v]',
         '-map', '1:a',
+        '-r', '30',
         '-c:v', 'libx264',
         '-preset', 'ultrafast',
         '-tune', 'zerolatency',
@@ -785,12 +861,14 @@ class StreamerEngine {
         '-pix_fmt', 'yuv420p',
         '-g', '60',
         '-keyint_min', '60',
+        '-sc_threshold', '0',
         '-threads', '0',
         '-c:a', 'aac',
         '-b:a', audioBitrate,
-        '-ar', '44100',
+        '-ar', '48000',
+        '-ac', '2',
         '-flvflags', 'no_duration_filesize',
-        '-max_muxing_queue_size', '2048'
+        '-max_muxing_queue_size', '4096'
       ];
     }
 
