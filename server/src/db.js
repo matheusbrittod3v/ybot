@@ -93,7 +93,7 @@ const DEFAULT_SETTINGS = {
   defaultLiveTags: 'ao vivo, 24 horas, debate, podcast, brasil, cortes, entrevista, politica, inteligencia ltda, flow podcast, noticias, debate ao vivo, melhores momentos, tv braza',
   enableDynamicDescription: true,
   defaultLiveDescriptionTemplate: '🔴 TV BRAZA 24/7 AO VIVO\n\n▶️ Assistindo agora: {title}\n\n🔔 Inscreva-se no canal e ative o sininho para acompanhar os melhores debates, podcasts e entrevistas 24 horas ininterruptas!\n\n#aovivo #podcast #debate #brasil #noticias',
-  enableTwitchStream: false,
+  enableTwitchStream: process.env.ENABLE_TWITCH_STREAM === 'true',
   twitchRtmpUrl: process.env.TWITCH_RTMP_URL || 'rtmp://live.twitch.tv/app/',
   twitchStreamKey: process.env.TWITCH_STREAM_KEY || '',
   adminPassword: process.env.ADMIN_PASSWORD || 'admin123'
@@ -256,9 +256,9 @@ class Database {
         defaultLiveTags: r.default_live_tags !== undefined && r.default_live_tags !== null ? r.default_live_tags : 'ao vivo, 24 horas, debate, podcast, brasil, cortes, entrevista, politica, inteligencia ltda, flow podcast, noticias, debate ao vivo, melhores momentos, tv braza',
         enableDynamicDescription: r.enable_dynamic_description !== undefined ? Boolean(r.enable_dynamic_description) : true,
         defaultLiveDescriptionTemplate: r.default_live_description_template !== undefined && r.default_live_description_template !== null ? r.default_live_description_template : '🔴 TV BRAZA 24/7 AO VIVO\n\n▶️ Assistindo agora: {title}\n\n🔔 Inscreva-se no canal e ative o sininho para acompanhar os melhores debates, podcasts e entrevistas 24 horas ininterruptas!\n\n#aovivo #podcast #debate #brasil #noticias',
-        enableTwitchStream: Boolean(r.enable_twitch_stream),
-        twitchRtmpUrl: r.twitch_rtmp_url || 'rtmp://live.twitch.tv/app/',
-        twitchStreamKey: r.twitch_stream_key || '',
+        enableTwitchStream: (r.enable_twitch_stream !== null && r.enable_twitch_stream !== undefined && r.enable_twitch_stream !== 0) ? Boolean(r.enable_twitch_stream) : (process.env.ENABLE_TWITCH_STREAM === 'true'),
+        twitchRtmpUrl: r.twitch_rtmp_url || process.env.TWITCH_RTMP_URL || 'rtmp://live.twitch.tv/app/',
+        twitchStreamKey: r.twitch_stream_key || process.env.TWITCH_STREAM_KEY || '',
         adminPassword: r.admin_password || 'admin123'
       };
     }

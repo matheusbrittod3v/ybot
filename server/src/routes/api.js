@@ -592,12 +592,22 @@ router.post('/settings', (req, res) => {
   const updates = req.body;
   const updated = db.updateSettings(updates);
 
-  // Se alterou a marca d'água (texto ou ativação), recarrega o stream em tempo real
+  // Se alterou a marca d'água, dados RTMP do YouTube ou Multistream da Twitch, recarrega o stream em tempo real
   const watermarkChanged = 
     ('watermarkText' in updates && updates.watermarkText !== oldSettings.watermarkText) ||
     ('enableWatermark' in updates && updates.enableWatermark !== oldSettings.enableWatermark);
 
-  if (watermarkChanged) {
+  const twitchChanged = 
+    ('enableTwitchStream' in updates && updates.enableTwitchStream !== oldSettings.enableTwitchStream) ||
+    ('twitchStreamKey' in updates && updates.twitchStreamKey !== oldSettings.twitchStreamKey) ||
+    ('twitchRtmpUrl' in updates && updates.twitchRtmpUrl !== oldSettings.twitchRtmpUrl);
+
+  const rtmpChanged = 
+    ('youtubeStreamKey' in updates && updates.youtubeStreamKey !== oldSettings.youtubeStreamKey) ||
+    ('youtubeRtmpUrl' in updates && updates.youtubeRtmpUrl !== oldSettings.youtubeRtmpUrl);
+
+  if (watermarkChanged || twitchChanged || rtmpChanged) {
+    console.log('[API Settings] Configurações de transmissão alteradas. Recarregando motor em tempo real...');
     streamer.reloadCurrentStream();
   }
 

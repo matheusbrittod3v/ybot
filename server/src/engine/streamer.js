@@ -342,9 +342,11 @@ class StreamerEngine {
     }
 
     // 2. Destino Secundário: Twitch Multistream
-    if (settings.enableTwitchStream && settings.twitchStreamKey) {
-      const cleanTwitchKey = settings.twitchStreamKey.trim();
-      const twitchUrl = (settings.twitchRtmpUrl || 'rtmp://live.twitch.tv/app/').replace(/\/+$/, '');
+    const twitchKey = (settings.twitchStreamKey || process.env.TWITCH_STREAM_KEY || '').trim();
+    const twitchEnabled = Boolean(settings.enableTwitchStream || process.env.ENABLE_TWITCH_STREAM === 'true');
+    if (twitchEnabled && twitchKey) {
+      const cleanTwitchKey = twitchKey;
+      const twitchUrl = (settings.twitchRtmpUrl || process.env.TWITCH_RTMP_URL || 'rtmp://live.twitch.tv/app/').replace(/\/+$/, '');
       targets.push({
         name: 'Twitch',
         url: `${twitchUrl}/${cleanTwitchKey}`,
