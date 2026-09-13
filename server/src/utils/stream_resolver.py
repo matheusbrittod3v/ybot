@@ -4,7 +4,7 @@ stream_resolver.py
 Extrator Definitivo de URLs Diretas de Streaming (1080p / 720p / 4K)
 Bypass Total de Bloqueio Bot / SABR / PO Token do YouTube:
 - Utiliza cliente ANDROID_VR e ANDROID (imunes a SABR e restrições de PO Token em datacenters).
-- Injeta cookies.txt autenticados.
+- Tenta com e sem cookies para máxima compatibilidade entre IPs residenciais e de datacenter.
 - Timeout generoso de 30s para vídeos longos e podcasts.
 - Extração de alta precisão sem quebra por mensagens de console.
 """
@@ -12,7 +12,6 @@ import sys
 import os
 import json
 import subprocess
-import urllib.request
 
 def find_cookies_file():
     candidates = [
@@ -27,60 +26,83 @@ def find_cookies_file():
             return p
     return None
 
+def parse_yt_dlp_output(stdout_text):
+    raw_lines = [l.strip() for l in stdout_text.split('\n') if l.strip()]
+    urls = [l for l in raw_lines if l.startswith('http://') or l.startswith('https://')]
+    titles = [
+        l for l in raw_lines
+        if not l.startswith('http') and not l.startswith(('Deprecated', 'WARNING', '[youtube', '['))
+    ]
+    title = titles[0] if titles else 'YouTube Video'
+
+    if len(urls) >= 1:
+        video_url = urls[0]
+        audio_url = urls[1] if len(urls) > 1 else None
+        is_progressive = len(urls) == 1
+        return {
+            'success': True,
+            'provider': 'yt-dlp_android_vr',
+            'title': title,
+            'videoUrl': video_url,
+            'audioUrl': audio_url,
+            'isProgressive': is_progressive,
+            'resolution': '1080p' if not is_progressive else '720p'
+        }
+    return None
+
 def resolve_stream(url):
     cookies_path = find_cookies_file()
 
-    # 1. Fast-Path: yt-dlp com cliente ANDROID_VR (imune a SABR e PO Token)
+    # Identifica binários disponíveis
     yt_commands = [
         [sys.executable, '-m', 'yt_dlp'],
         ['yt-dlp'],
         ['/usr/local/bin/yt-dlp']
     ]
 
+    base_args = [
+        '--no-playlist',
+        '--no-warnings',
+        '--extractor-args', 'youtube:player_client=android_vr,android,web',
+        '-e',
+        '-g',
+        '-f', 'bv*[height<=1080][ext=mp4]+ba[ext=m4a]/bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bestvideo+bestaudio/best',
+        url
+    ]
+
+    # 1. Tenta yt-dlp COM cookies (se disponível)
+    if cookies_path:
+        for yt_bin in yt_commands:
+            try:
+                cmd = yt_bin + base_args + ['--cookies', cookies_path]
+                res = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+                if res.returncode == 0 and res.stdout.strip():
+                    parsed = parse_yt_dlp_output(res.stdout)
+                    if parsed:
+                        return parsed
+                else:
+                    if res.stderr.strip():
+                        print(f"[Resolver Debug com cookies] {yt_bin[0]} erro: {res.stderr.strip()[:200]}", file=sys.stderr)
+            except Exception as e:
+                continue
+
+    # 2. Tenta yt-dlp SEM cookies (muitas vezes IPs de datacenter funcionam melhor sem cookies para ANDROID_VR)
     for yt_bin in yt_commands:
         try:
-            cmd = yt_bin + [
-                '--no-playlist',
-                '--no-warnings',
-                '--extractor-args', 'youtube:player_client=android_vr,android,web',
-                '-e',
-                '-g',
-                '-f', 'bv*[height<=1080][ext=mp4]+ba[ext=m4a]/bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bestvideo+bestaudio/best',
-                url
-            ]
-            if cookies_path:
-                cmd.extend(['--cookies', cookies_path])
-
+            cmd = yt_bin + base_args
             res = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
             if res.returncode == 0 and res.stdout.strip():
-                raw_lines = [l.strip() for l in res.stdout.split('\n') if l.strip()]
-                # URLs de stream sempre começam com http
-                urls = [l for l in raw_lines if l.startswith('http://') or l.startswith('https://')]
-                # Título é a primeira linha que não é URL e não é aviso
-                titles = [
-                    l for l in raw_lines
-                    if not l.startswith('http') and not l.startswith(('Deprecated', 'WARNING', '[youtube', '['))
-                ]
-                title = titles[0] if titles else 'YouTube Video'
-
-                if len(urls) >= 1:
-                    video_url = urls[0]
-                    audio_url = urls[1] if len(urls) > 1 else None
-                    is_progressive = len(urls) == 1
-
-                    return {
-                        'success': True,
-                        'provider': 'yt-dlp_android_vr',
-                        'title': title,
-                        'videoUrl': video_url,
-                        'audioUrl': audio_url,
-                        'isProgressive': is_progressive,
-                        'resolution': '1080p' if not is_progressive else '720p'
-                    }
+                parsed = parse_yt_dlp_output(res.stdout)
+                if parsed:
+                    parsed['provider'] = 'yt-dlp_nocookies'
+                    return parsed
+            else:
+                if res.stderr.strip():
+                    print(f"[Resolver Debug sem cookies] {yt_bin[0]} erro: {res.stderr.strip()[:200]}", file=sys.stderr)
         except Exception:
             continue
 
-    # 2. Fallback Secundário: pytubefix com ANDROID_VR
+    # 3. Fallback Secundário: pytubefix com ANDROID_VR
     try:
         from pytubefix import YouTube
         for client in ['ANDROID_VR', 'VISION_OS', 'IOS']:
