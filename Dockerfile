@@ -38,8 +38,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copia o binário C++ nativo gerado no estágio de build
 COPY --from=cpp-builder /src/server/cpp-engine/build/tvbraza-engine /usr/local/bin/tvbraza-engine
 
-# Instala pytubefix (Biblioteca com PO Token automático para download sem cookies)
-RUN pip install --no-cache-dir --break-system-packages pytubefix
+# Instala pytubefix e yt-dlp no ambiente Python
+RUN pip install --no-cache-dir --break-system-packages pytubefix yt-dlp
 
 # Baixa a versão oficial mais recente do yt-dlp diretamente do repositório oficial (fallback)
 RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp \

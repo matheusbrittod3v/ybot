@@ -32,7 +32,8 @@ def download_video(url, output_path):
     # 1. Fast-Path via yt-dlp com cookies da sessão
     yt_commands = [
         [sys.executable, '-m', 'yt_dlp'],
-        ['yt-dlp']
+        ['yt-dlp'],
+        ['/usr/local/bin/yt-dlp']
     ]
 
     for yt_bin in yt_commands:
@@ -40,7 +41,7 @@ def download_video(url, output_path):
             cmd = yt_bin + [
                 '--no-playlist',
                 '--no-warnings',
-                '--extractor-args', 'youtube:player_client=android,web',
+                '--extractor-args', 'youtube:player_client=android_vr,android,web',
                 '-f', 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
                 '--merge-output-format', 'mp4',
                 '-o', output_path,

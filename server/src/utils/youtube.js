@@ -58,7 +58,8 @@ export async function fetchVideoInfo(url) {
   // 1. Fast-Path: yt-dlp nativo com cookies (Precisão 100% de primeira)
   const ytAttempts = [
     { cmd: 'python3', args: ['-m', 'yt_dlp'] },
-    { cmd: 'yt-dlp', args: [] }
+    { cmd: 'yt-dlp', args: [] },
+    { cmd: '/usr/local/bin/yt-dlp', args: [] }
   ];
 
   for (const attempt of ytAttempts) {
@@ -68,7 +69,7 @@ export async function fetchVideoInfo(url) {
         '--dump-json',
         '--no-warnings',
         '--no-playlist',
-        '--extractor-args', 'youtube:player_client=android,web'
+        '--extractor-args', 'youtube:player_client=android_vr,android,web'
       ];
       if (cookiesPath) {
         args.push('--cookies', cookiesPath);

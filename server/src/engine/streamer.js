@@ -126,10 +126,10 @@ function buildScheduleOverlaySteps(currentInput, settings, currentItemId = null,
 }
 
 async function resolveDirectStreams(url) {
-  // 1. Motor Primário via stream_resolver (Fast-Path yt-dlp + cookies.txt + Pre-flight Check)
+  // 1. Motor Primário via stream_resolver (Fast-Path yt-dlp + cookies.txt + ANDROID_VR)
   try {
-    console.log('[Streamer Direct] Resolvendo fluxo via stream_resolver (Fast-Path + cookies)...');
-    const { stdout } = await execFileAsync('python3', [RESOLVER_SCRIPT, url], { timeout: 18000, input: '' });
+    console.log('[Streamer Direct] Resolvendo fluxo via stream_resolver (Fast-Path + cookies + ANDROID_VR)...');
+    const { stdout } = await execFileAsync('python3', [RESOLVER_SCRIPT, url], { timeout: 35000, input: '' });
     const cleanOutput = stdout.trim().split('\n').find(l => l.trim().startsWith('{'));
     if (cleanOutput) {
       const data = JSON.parse(cleanOutput);
@@ -142,9 +142,9 @@ async function resolveDirectStreams(url) {
     console.warn('[Streamer Direct] stream_resolver aviso:', err.message);
   }
 
-  // 2. Fallback Secundário via python3 -m yt_dlp / yt-dlp CLI com cookies
+  // 2. Fallback Secundário via python3 -m yt_dlp / yt-dlp CLI com cookies e ANDROID_VR
   try {
-    console.log('[Streamer Direct] Tentando fallback secundário via yt-dlp com cookies...');
+    console.log('[Streamer Direct] Tentando fallback secundário via yt-dlp com cookies e ANDROID_VR...');
     const candidates = [
       path.join(DATA_DIR, 'cookies.txt'),
       path.resolve(__dirname, '../../../data/cookies.txt'),
@@ -155,7 +155,8 @@ async function resolveDirectStreams(url) {
 
     const attempts = [
       { cmd: 'python3', prefixArgs: ['-m', 'yt_dlp'] },
-      { cmd: 'yt-dlp', prefixArgs: [] }
+      { cmd: 'yt-dlp', prefixArgs: [] },
+      { cmd: '/usr/local/bin/yt-dlp', prefixArgs: [] }
     ];
 
     for (const att of attempts) {
@@ -164,16 +165,16 @@ async function resolveDirectStreams(url) {
           ...att.prefixArgs,
           '--no-playlist',
           '--no-warnings',
-          '--extractor-args', 'youtube:player_client=android,web',
+          '--extractor-args', 'youtube:player_client=android_vr,android,web',
           '-g',
-          '-f', 'bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/best',
+          '-f', 'bv*[height<=1080][ext=mp4]+ba[ext=m4a]/bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bestvideo+bestaudio/best',
           url
         ];
         if (cookiesPath) {
           ytArgs.splice(att.prefixArgs.length, 0, '--cookies', cookiesPath);
         }
-        const { stdout } = await execFileAsync(att.cmd, ytArgs, { timeout: 15000 });
-        const lines = stdout.trim().split('\n').map(l => l.trim()).filter(l => l.startsWith('http'));
+        const { stdout } = await execFileAsync(att.cmd, ytArgs, { timeout: 30000 });
+        const lines = stdout.trim().split('\n').map(l => l.trim()).filter(l => l.startsWith('http://') || l.startsWith('https://'));
         if (lines.length > 0) {
           console.log(`[Streamer Direct] Fluxo resolvido com sucesso via fallback yt-dlp!`);
           return {

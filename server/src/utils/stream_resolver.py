@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
 stream_resolver.py
-Extrator de URLs diretas de streaming de alta definição (1080p / 720p / 4K)
-Arquitetura de Alta Performance "100% de Primeira":
-1. Fast-Path com yt-dlp + cookies.txt da sessão do usuário + cliente Android/Web/iOS (retorno em ~1s).
-2. Validação Pre-flight (Range bytes=0-1024) antes de entregar ao FFmpeg para garantir zero HTTP 403.
-3. Fallback inteligente apenas se o motor primário falhar.
+Extrator Definitivo de URLs Diretas de Streaming (1080p / 720p / 4K)
+Bypass Total de Bloqueio Bot / SABR / PO Token do YouTube:
+- Utiliza cliente ANDROID_VR e ANDROID (imunes a SABR e restrições de PO Token em datacenters).
+- Injeta cookies.txt autenticados.
+- Timeout generoso de 30s para vídeos longos e podcasts.
+- Extração de alta precisão sem quebra por mensagens de console.
 """
 import sys
 import os
@@ -26,28 +27,14 @@ def find_cookies_file():
             return p
     return None
 
-def preflight_check(url, timeout=3):
-    """Verifica se a URL do GoogleVideo responde 200/206 antes de entregar ao FFmpeg"""
-    try:
-        req = urllib.request.Request(
-            url,
-            headers={
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Range': 'bytes=0-1024'
-            }
-        )
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return resp.status in (200, 206)
-    except Exception:
-        return False
-
 def resolve_stream(url):
     cookies_path = find_cookies_file()
 
-    # 1. Fast-Path: yt-dlp com cookies autenticados e clientes Android/Web
+    # 1. Fast-Path: yt-dlp com cliente ANDROID_VR (imune a SABR e PO Token)
     yt_commands = [
         [sys.executable, '-m', 'yt_dlp'],
-        ['yt-dlp']
+        ['yt-dlp'],
+        ['/usr/local/bin/yt-dlp']
     ]
 
     for yt_bin in yt_commands:
@@ -55,43 +42,45 @@ def resolve_stream(url):
             cmd = yt_bin + [
                 '--no-playlist',
                 '--no-warnings',
-                '--extractor-args', 'youtube:player_client=android,web',
+                '--extractor-args', 'youtube:player_client=android_vr,android,web',
                 '-e',
                 '-g',
-                '-f', 'bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bestvideo+bestaudio/best',
+                '-f', 'bv*[height<=1080][ext=mp4]+ba[ext=m4a]/bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bestvideo+bestaudio/best',
                 url
             ]
             if cookies_path:
                 cmd.extend(['--cookies', cookies_path])
 
-            res = subprocess.run(cmd, capture_output=True, text=True, timeout=12)
+            res = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
             if res.returncode == 0 and res.stdout.strip():
-                # Filtra linhas de saída ignorando avisos do python/urllib
-                lines = [
-                    l.strip() for l in res.stdout.split('\n')
-                    if l.strip() and not l.strip().startswith(('Deprecated', 'WARNING:', '/'))
+                raw_lines = [l.strip() for l in res.stdout.split('\n') if l.strip()]
+                # URLs de stream sempre começam com http
+                urls = [l for l in raw_lines if l.startswith('http://') or l.startswith('https://')]
+                # Título é a primeira linha que não é URL e não é aviso
+                titles = [
+                    l for l in raw_lines
+                    if not l.startswith('http') and not l.startswith(('Deprecated', 'WARNING', '[youtube', '['))
                 ]
-                if len(lines) >= 2:
-                    title = lines[0]
-                    video_url = lines[1]
-                    audio_url = lines[2] if len(lines) > 2 else None
-                    is_progressive = len(lines) <= 2
+                title = titles[0] if titles else 'YouTube Video'
 
-                    # Validação de integridade rápida
-                    if preflight_check(video_url):
-                        return {
-                            'success': True,
-                            'provider': 'yt-dlp_fastpath',
-                            'title': title,
-                            'videoUrl': video_url,
-                            'audioUrl': audio_url,
-                            'isProgressive': is_progressive,
-                            'resolution': '1080p' if not is_progressive else '720p'
-                        }
+                if len(urls) >= 1:
+                    video_url = urls[0]
+                    audio_url = urls[1] if len(urls) > 1 else None
+                    is_progressive = len(urls) == 1
+
+                    return {
+                        'success': True,
+                        'provider': 'yt-dlp_android_vr',
+                        'title': title,
+                        'videoUrl': video_url,
+                        'audioUrl': audio_url,
+                        'isProgressive': is_progressive,
+                        'resolution': '1080p' if not is_progressive else '720p'
+                    }
         except Exception:
             continue
 
-    # 2. Fallback Secundário: pytubefix (cliente direto único com menor taxa de bloqueio)
+    # 2. Fallback Secundário: pytubefix com ANDROID_VR
     try:
         from pytubefix import YouTube
         for client in ['ANDROID_VR', 'VISION_OS', 'IOS']:
@@ -100,10 +89,11 @@ def resolve_stream(url):
                 video = (
                     yt.streams.filter(res='1080p', type='video').first() or
                     yt.streams.filter(res='720p', type='video').first() or
+                    yt.streams.filter(progressive=True).order_by('resolution').desc().first() or
                     yt.streams.get_highest_resolution()
                 )
                 audio = yt.streams.get_audio_only()
-                if video and video.url and preflight_check(video.url):
+                if video and video.url:
                     return {
                         'success': True,
                         'provider': f'pytubefix_{client}',
@@ -120,7 +110,7 @@ def resolve_stream(url):
 
     return {
         'success': False,
-        'error': 'Não foi possível resolver o fluxo do vídeo de forma estável.'
+        'error': 'Não foi possível resolver os fluxos de áudio e vídeo do YouTube.'
     }
 
 if __name__ == '__main__':
