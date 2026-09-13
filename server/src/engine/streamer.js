@@ -330,27 +330,35 @@ class StreamerEngine {
     const settings = db.getSettings();
     const targets = [];
 
-    // 1. Destino Principal: YouTube Live
+    // 1. Interface Isolada: YouTube Live
     if (settings.youtubeStreamKey) {
       const cleanKey = settings.youtubeStreamKey.trim();
       const rtmpUrl = (settings.youtubeRtmpUrl || 'rtmp://a.rtmp.youtube.com/live2').replace(/\/+$/, '');
       targets.push({
+        id: 'youtube',
         name: 'YouTube',
+        platform: 'youtube',
         url: `${rtmpUrl}/${cleanKey}`,
-        masked: `${rtmpUrl}/****`
+        masked: `${rtmpUrl}/****`,
+        maxBitrateKbps: 8000,
+        flvFlags: 'no_duration_filesize'
       });
     }
 
-    // 2. Destino Secundário: Twitch Multistream
+    // 2. Interface Isolada: Twitch Multistream
     const twitchKey = (settings.twitchStreamKey || process.env.TWITCH_STREAM_KEY || '').trim();
     const twitchEnabled = Boolean(settings.enableTwitchStream || process.env.ENABLE_TWITCH_STREAM === 'true');
     if (twitchEnabled && twitchKey) {
       const cleanTwitchKey = twitchKey;
       const twitchUrl = (settings.twitchRtmpUrl || process.env.TWITCH_RTMP_URL || 'rtmp://live.twitch.tv/app/').replace(/\/+$/, '');
       targets.push({
+        id: 'twitch',
         name: 'Twitch',
+        platform: 'twitch',
         url: `${twitchUrl}/${cleanTwitchKey}`,
-        masked: `${twitchUrl}/****`
+        masked: `${twitchUrl}/****`,
+        maxBitrateKbps: 5800, // Teto máximo rígido da Twitch (limite 6000k)
+        flvFlags: 'no_duration_filesize'
       });
     }
 
@@ -360,6 +368,27 @@ class StreamerEngine {
   getStreamTarget() {
     const targets = this.getStreamTargets();
     return targets.length > 0 ? targets[0].url : null;
+  }
+
+  getEffectiveBitrate(settings) {
+    const targets = this.getStreamTargets();
+    let videoBitrate = settings.videoBitrate || '5500k';
+    let numericBitrate = parseInt(videoBitrate, 10) || 5500;
+
+    // Regra da Interface Twitch: se a Twitch estiver ativa, respeita o teto de 5800k (seguro < 6000k)
+    const hasTwitch = targets.some(t => t.id === 'twitch');
+    if (hasTwitch && numericBitrate > 5800) {
+      console.log(`[Streamer Multistream] ⚡ Interface Twitch isolada: limitando taxa de ${videoBitrate} para 5500k (teto seguro Twitch < 6000k)`);
+      numericBitrate = 5500;
+      videoBitrate = '5500k';
+    }
+
+    return {
+      videoBitrate,
+      numericBitrate,
+      bufSize: `${numericBitrate * 2}k`,
+      audioBitrate: settings.audioBitrate || '160k'
+    };
   }
 
   appendRtmpOutputs(args) {
@@ -377,16 +406,21 @@ class StreamerEngine {
     }
 
     if (targets.length === 1) {
-      args.push('-flvflags', 'no_duration_filesize', '-f', 'flv', targets[0].url);
+      const t = targets[0];
+      const flvFlags = t.flvFlags || 'no_duration_filesize';
+      args.push('-flvflags', flvFlags, '-f', 'flv', t.url);
       return targets;
     }
 
-    // Multistream simultâneo (YouTube + Twitch) via muxer 'tee':
+    // Multistream simultâneo (YouTube + Twitch) com interfaces isoladas via muxer 'tee':
     // Codifica vídeo (H.264) e áudio (AAC) UMA ÚNICA VEZ e replica para ambos os servidores RTMP.
     // O parâmetro 'onfail=ignore' garante que se uma das transmissões oscilar, a outra continua 100% no ar!
     // 'flvflags=no_duration_filesize' é indispensável para o YouTube Studio tratar como live contínua sem duração finita.
     args.push('-flags', '+global_header', '-f', 'tee');
-    const teeOutputs = targets.map(t => `[f=flv:onfail=ignore:flvflags=no_duration_filesize]${t.url}`).join('|');
+    const teeOutputs = targets.map(t => {
+      const flvFlags = t.flvFlags ? `:flvflags=${t.flvFlags}` : ':flvflags=no_duration_filesize';
+      return `[f=flv:onfail=ignore${flvFlags}]${t.url}`;
+    }).join('|');
     args.push(teeOutputs);
 
     return targets;
@@ -599,10 +633,7 @@ class StreamerEngine {
         ];
       }
 
-      const videoBitrate = settings.videoBitrate || '6800k';
-      const audioBitrate = settings.audioBitrate || '160k';
-      const numericBitrate = parseInt(videoBitrate, 10) || 6800;
-      const bufSize = `${numericBitrate * 2}k`;
+      const { videoBitrate, audioBitrate, bufSize } = this.getEffectiveBitrate(settings);
 
       const args = [
         ...inputArgs,
@@ -879,10 +910,7 @@ class StreamerEngine {
 
     const settings = db.getSettings();
     const rtmpTarget = this.getStreamTarget();
-    const videoBitrate = settings.videoBitrate || '6800k';
-    const audioBitrate = settings.audioBitrate || '160k';
-    const numericBitrate = parseInt(videoBitrate, 10) || 6800;
-    const bufSize = `${numericBitrate * 2}k`;
+    const { videoBitrate, audioBitrate, bufSize } = this.getEffectiveBitrate(settings);
     const targetResKey = String(settings.resolution || '1080p').toLowerCase().trim();
     const resConfig = RESOLUTION_CONFIGS[targetResKey] || RESOLUTION_CONFIGS['1080p'];
 

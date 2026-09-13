@@ -55,3 +55,26 @@ test('Multi-Stream: appendRtmpOutputs duplica fluxo codificado via tee muxer com
   assert.ok(teeOutputArg.includes('rtmp://a.rtmp.youtube.com/live2/yt-key'), 'Deve conter destino YouTube no tee');
   assert.ok(teeOutputArg.includes('rtmp://live.twitch.tv/app/twitch-key'), 'Deve conter destino Twitch no tee');
 });
+
+test('Multi-Stream: getEffectiveBitrate limita a 5500k quando interface Twitch estiver ativa', () => {
+  // Apenas YouTube: aceita bitrate customizado mais alto
+  db.updateSettings({
+    youtubeStreamKey: 'yt-key',
+    enableTwitchStream: false,
+    twitchStreamKey: '',
+    videoBitrate: '6800k'
+  });
+  let effective = streamer.getEffectiveBitrate(db.getSettings());
+  assert.strictEqual(effective.videoBitrate, '6800k');
+
+  // Com Twitch conectada: força teto seguro de 5500k para não violar limite de 6000k da Twitch
+  db.updateSettings({
+    youtubeStreamKey: 'yt-key',
+    enableTwitchStream: true,
+    twitchStreamKey: 'twitch-key',
+    videoBitrate: '6800k'
+  });
+  effective = streamer.getEffectiveBitrate(db.getSettings());
+  assert.strictEqual(effective.videoBitrate, '5500k');
+  assert.strictEqual(effective.numericBitrate, 5500);
+});
