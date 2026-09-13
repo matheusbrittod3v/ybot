@@ -686,9 +686,11 @@ function setupEventListeners() {
     });
   });
 
-  if (elCfgEnableTwitch && elPanelTwitchConfig) {
-    elCfgEnableTwitch.addEventListener('change', () => {
-      elPanelTwitchConfig.style.display = elCfgEnableTwitch.checked ? 'block' : 'none';
+  if (elCfgTwitchStreamKey && elCfgEnableTwitch) {
+    elCfgTwitchStreamKey.addEventListener('input', () => {
+      if (elCfgTwitchStreamKey.value.trim().length > 3 && !elCfgEnableTwitch.checked) {
+        elCfgEnableTwitch.checked = true;
+      }
     });
   }
 
@@ -1436,7 +1438,6 @@ async function openSettingsModal() {
 
       // Multistream Twitch
       if (elCfgEnableTwitch) elCfgEnableTwitch.checked = Boolean(s.enableTwitchStream);
-      if (elPanelTwitchConfig) elPanelTwitchConfig.style.display = s.enableTwitchStream ? 'block' : 'none';
       if (elCfgTwitchRtmpUrl) elCfgTwitchRtmpUrl.value = s.twitchRtmpUrl || 'rtmp://live.twitch.tv/app/';
       if (elCfgTwitchStreamKey) elCfgTwitchStreamKey.value = s.twitchStreamKey || '';
 
