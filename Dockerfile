@@ -61,7 +61,8 @@ COPY server/ ./server/
 RUN mkdir -p /app/data/media /app/data/thumbs && chmod -R 777 /app/data
 
 # Copia arquivo padrão de cookies para contornar verificações de bot
-COPY data/cookies.txt /app/data/cookies.txt
+COPY data/cookies* /app/data/
+RUN if [ ! -f /app/data/cookies.txt ]; then touch /app/data/cookies.txt; fi
 
 # Variáveis de ambiente padrão
 ENV NODE_ENV=production
