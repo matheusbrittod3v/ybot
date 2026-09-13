@@ -33,7 +33,7 @@ test('Multi-Stream: getStreamTargets retorna YouTube e Twitch simultaneamente qu
   assert.ok(targets[1].url.includes('live_test_twitch_456'));
 });
 
-test('Multi-Stream: appendRtmpOutputs duplica fluxo via stream copy (-c:v copy -c:a copy) com ZERO re-encoding', () => {
+test('Multi-Stream: appendRtmpOutputs duplica fluxo codificado via tee muxer com ZERO re-encoding', () => {
   db.updateSettings({
     youtubeStreamKey: 'yt-key',
     enableTwitchStream: true,
@@ -45,19 +45,12 @@ test('Multi-Stream: appendRtmpOutputs duplica fluxo via stream copy (-c:v copy -
   const targets = streamer.appendRtmpOutputs(args);
 
   assert.strictEqual(targets.length, 2);
-  // Primeiro destino usa saída FLV primária
-  const ytIdx = args.indexOf('rtmp://a.rtmp.youtube.com/live2/yt-key');
-  assert.ok(ytIdx !== -1, 'YouTube RTMP deve estar nos args');
-  assert.strictEqual(args[ytIdx - 2], '-f');
-  assert.strictEqual(args[ytIdx - 1], 'flv');
-
-  // Segundo destino (Twitch) clona o bitstream sem re-codificar (Zero CPU extra)
-  const twitchIdx = args.indexOf('rtmp://live.twitch.tv/app/twitch-key');
-  assert.ok(twitchIdx !== -1, 'Twitch RTMP deve estar nos args');
-  assert.strictEqual(args[twitchIdx - 6], '-c:v');
-  assert.strictEqual(args[twitchIdx - 5], 'copy');
-  assert.strictEqual(args[twitchIdx - 4], '-c:a');
-  assert.strictEqual(args[twitchIdx - 3], 'copy');
-  assert.strictEqual(args[twitchIdx - 2], '-f');
-  assert.strictEqual(args[twitchIdx - 1], 'flv');
+  assert.ok(args.includes('-flags'), 'Deve incluir -flags');
+  assert.ok(args.includes('+global_header'), 'Deve incluir +global_header');
+  assert.ok(args.includes('tee'), 'Deve usar o muxer tee para duplicar stream sem re-encoding');
+  
+  const teeOutputArg = args.find(a => typeof a === 'string' && a.includes('[f=flv:onfail=ignore]'));
+  assert.ok(teeOutputArg, 'Deve conter a string do muxer tee');
+  assert.ok(teeOutputArg.includes('rtmp://a.rtmp.youtube.com/live2/yt-key'), 'Deve conter destino YouTube no tee');
+  assert.ok(teeOutputArg.includes('rtmp://live.twitch.tv/app/twitch-key'), 'Deve conter destino Twitch no tee');
 });

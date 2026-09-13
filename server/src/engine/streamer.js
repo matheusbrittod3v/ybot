@@ -369,14 +369,17 @@ class StreamerEngine {
       return targets;
     }
 
-    // Primeiro destino (ex: YouTube)
-    args.push('-f', 'flv', targets[0].url);
-
-    // Demais destinos (ex: Twitch Multistream):
-    // Duplica o fluxo codificado usando -c:v copy -c:a copy com ZERO re-encoding e ZERO CPU extra!
-    for (let i = 1; i < targets.length; i++) {
-      args.push('-c:v', 'copy', '-c:a', 'copy', '-f', 'flv', targets[i].url);
+    if (targets.length === 1) {
+      args.push('-f', 'flv', targets[0].url);
+      return targets;
     }
+
+    // Multistream simultâneo (YouTube + Twitch) via muxer 'tee':
+    // Codifica vídeo (H.264) e áudio (AAC) UMA ÚNICA VEZ e replica para ambos os servidores RTMP.
+    // O parâmetro 'onfail=ignore' garante que se uma das transmissões oscilar, a outra continua 100% no ar!
+    args.push('-flags', '+global_header', '-f', 'tee');
+    const teeOutputs = targets.map(t => `[f=flv:onfail=ignore]${t.url}`).join('|');
+    args.push(teeOutputs);
 
     return targets;
   }
