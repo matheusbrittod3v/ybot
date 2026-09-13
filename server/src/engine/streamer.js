@@ -369,6 +369,13 @@ class StreamerEngine {
       return targets;
     }
 
+    // Garante que os streams de vídeo e áudio estejam explicitamente mapeados.
+    // O muxer 'tee' do FFmpeg não executa stream selection automático por padrão;
+    // sem -map explícito, ele encerra com o erro: "Output file #0 does not contain any stream".
+    if (!args.includes('-map')) {
+      args.push('-map', '0:v:0', '-map', '0:a:0?');
+    }
+
     if (targets.length === 1) {
       args.push('-flvflags', 'no_duration_filesize', '-f', 'flv', targets[0].url);
       return targets;
@@ -563,14 +570,16 @@ class StreamerEngine {
               ...httpOptions,
               '-i', streamData.audioUrl,
               '-map', '0:v:0',
-              '-map', '1:a:0'
+              '-map', '1:a:0?'
             ];
           } else {
             inputArgs = [
               '-re',
               '-thread_queue_size', '4096',
               ...httpOptions,
-              '-i', streamData.videoUrl
+              '-i', streamData.videoUrl,
+              '-map', '0:v:0',
+              '-map', '0:a:0?'
             ];
           }
         } else {
@@ -580,7 +589,13 @@ class StreamerEngine {
         if (!item.filePath || !fs.existsSync(item.filePath)) {
           throw new Error(`Arquivo local de vídeo não encontrado: ${item.filePath}`);
         }
-        inputArgs = ['-re', '-thread_queue_size', '2048', '-i', item.filePath];
+        inputArgs = [
+          '-re',
+          '-thread_queue_size', '2048',
+          '-i', item.filePath,
+          '-map', '0:v:0',
+          '-map', '0:a:0?'
+        ];
       }
 
       const videoBitrate = settings.videoBitrate || '6800k';
@@ -888,6 +903,8 @@ class StreamerEngine {
         '-stream_loop', '-1',
         '-re',
         '-i', standbyFile,
+        '-map', '0:v:0',
+        '-map', '0:a:0?',
         '-r', '30',
         '-c:v', 'libx264',
         '-preset', 'ultrafast',

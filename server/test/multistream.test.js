@@ -48,6 +48,7 @@ test('Multi-Stream: appendRtmpOutputs duplica fluxo codificado via tee muxer com
   assert.ok(args.includes('-flags'), 'Deve incluir -flags');
   assert.ok(args.includes('+global_header'), 'Deve incluir +global_header');
   assert.ok(args.includes('tee'), 'Deve usar o muxer tee para duplicar stream sem re-encoding');
+  assert.ok(args.includes('-map'), 'Deve incluir mapeamento explícito de streams (-map) para o tee');
   
   const teeOutputArg = args.find(a => typeof a === 'string' && a.includes('[f=flv:onfail=ignore]'));
   assert.ok(teeOutputArg, 'Deve conter a string do muxer tee');
