@@ -117,9 +117,9 @@ class DownloaderEngine {
 
   /**
    * Orquestra o download com prioridade:
-   * 1. Motor Web Resolver (Bypass anti-bot total, sem necessidade de cookies, direto na nuvem)
-   * 2. Biblioteca pytubefix nativa com bypass de clientes
-   * 3. yt-dlp como fallback
+   * 1. Motor Fast-Path yt-dlp com cookies (Download nativo direto e ultrarrápido)
+   * 2. Motor Secundário yt-dlp CLI
+   * 3. Motor Web Resolver como fallback de emergência
    */
   async downloadItem(item) {
     if (this.activeDownload) {
@@ -134,13 +134,29 @@ class DownloaderEngine {
     db.updateQueueItem(item.id, {
       status: 'downloading',
       downloadProgress: 0,
-      downloadSpeed: 'Iniciando...'
+      downloadSpeed: 'Iniciando Fast-Path...'
     });
     this.broadcast('download_start', { item: db.getQueueItem(item.id) });
 
-    // 1. Tenta baixar via Motor Web Resolver (Bypass anti-bot total, sem cookies)
+    // 1. Motor Primário: Fast-Path com yt-dlp + cookies.txt (Download nativo direto em MP4)
+    console.log(`[Downloader] [Motor 1 Fast-Path] Disparando download para "${item.title}"...`);
+    const pytubeResult = await this.downloadWithPytube(item, cleanUrl, targetFile);
+    if (pytubeResult.success) {
+      return pytubeResult;
+    }
+
+    console.warn(`[Downloader] Motor 1 não completou. Tentando Motor 2 (yt-dlp CLI)...`);
+
+    // 2. Fallback via yt-dlp direto
+    const ytDlpResult = await this.downloadWithYtDlp(item, targetFile);
+    if (ytDlpResult.success) {
+      return ytDlpResult;
+    }
+
+    console.warn(`[Downloader] Motores locais falharam. Tentando fallback Web Resolver...`);
+
+    // 3. Fallback de emergência via Web Resolver
     try {
-      console.log(`[Downloader] [Motor 1] Tentando download via Web Resolver para ${item.title}...`);
       const abortController = new AbortController();
       this.activeDownload = {
         itemId: item.id,
@@ -178,20 +194,15 @@ class DownloaderEngine {
         return { success: true, item: updated };
       }
     } catch (webErr) {
-      console.warn(`[Downloader] Motor Web Resolver não completou: ${webErr.message}. Tentando pytubefix...`);
+      console.warn(`[Downloader] Web Resolver falhou: ${webErr.message}`);
       this.activeDownload = null;
     }
 
-    // 2. Fallback via biblioteca pytubefix (clientes alternativos)
-    const pytubeResult = await this.downloadWithPytube(item, cleanUrl, targetFile);
-    if (pytubeResult.success) {
-      return pytubeResult;
-    }
-
-    console.warn(`[Downloader] pytubefix não completou. Acionando motor final (yt-dlp)...`);
-
-    // 3. Fallback via yt-dlp
-    return await this.downloadWithYtDlp(item, cleanUrl, targetFile);
+    db.updateQueueItem(item.id, {
+      status: 'error',
+      error: 'Não foi possível baixar o vídeo em nenhum motor.'
+    });
+    return { success: false, error: 'Falha em todos os motores de download' };
   }
 
   /**
@@ -302,13 +313,19 @@ class DownloaderEngine {
       args.push('-o', targetFile, item.url);
 
       console.log(`[Downloader] Executando yt-dlp para item ${item.id} (${item.url})`);
-      const proc = spawn('yt-dlp', args);
+      const proc = spawn('python3', ['-m', 'yt_dlp', ...args]);
 
       this.activeDownload = {
         itemId: item.id,
         proc,
         promiseResolve: resolve
       };
+
+      proc.on('error', (err) => {
+        console.warn('[Downloader] Falha ao disparar motor yt-dlp:', err.message);
+        this.activeDownload = null;
+        resolve({ success: false, error: err.message });
+      });
 
       let lastProgressUpdate = 0;
 

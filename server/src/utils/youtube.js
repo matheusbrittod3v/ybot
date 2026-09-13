@@ -13,8 +13,18 @@ const PYTUBE_INFO_SCRIPT = path.join(__dirname, 'pytube_info.py');
 const execFileAsync = promisify(execFile);
 
 export function getCookiesFilePath() {
-  const cookiesPath = path.join(DATA_DIR, 'cookies.txt');
-  return fs.existsSync(cookiesPath) ? cookiesPath : null;
+  const candidates = [
+    path.join(DATA_DIR, 'cookies.txt'),
+    path.resolve(__dirname, '../../../data/cookies.txt'),
+    path.resolve(__dirname, '../../data/cookies.txt'),
+    '/app/data/cookies.txt'
+  ];
+  for (const p of candidates) {
+    if (fs.existsSync(p) && fs.statSync(p).size > 20) {
+      return p;
+    }
+  }
+  return null;
 }
 
 export function extractYouTubeId(url) {
@@ -42,32 +52,73 @@ export async function fetchVideoInfo(url) {
     throw new Error('URL inválida do YouTube. Insira um link válido do YouTube.');
   }
 
-  // Normaliza a URL para evitar parâmetros de rastreamento (?is=..., ?si=...) que ativam proteções do YouTube
   const cleanUrl = `https://www.youtube.com/watch?v=${videoId}`;
+  const cookiesPath = getCookiesFilePath();
 
-  // 1. Tenta obter metadados completos via Web Resolver (imune a bloqueios de IP de datacenter)
+  // 1. Fast-Path: yt-dlp nativo com cookies (Precisão 100% de primeira)
+  const ytAttempts = [
+    { cmd: 'python3', args: ['-m', 'yt_dlp'] },
+    { cmd: 'yt-dlp', args: [] }
+  ];
+
+  for (const attempt of ytAttempts) {
+    try {
+      const args = [
+        ...attempt.args,
+        '--dump-json',
+        '--no-warnings',
+        '--no-playlist',
+        '--extractor-args', 'youtube:player_client=android,web'
+      ];
+      if (cookiesPath) {
+        args.push('--cookies', cookiesPath);
+      }
+      args.push(cleanUrl);
+
+      const { stdout } = await execFileAsync(attempt.cmd, args, { timeout: 12000 });
+      // Remove warnings de bibliotecas para extrair apenas o JSON
+      const jsonLine = stdout.trim().split('\n').find(l => l.trim().startsWith('{'));
+      if (jsonLine) {
+        const data = JSON.parse(jsonLine);
+        return {
+          videoId,
+          url: cleanUrl,
+          title: data.title || 'Vídeo do YouTube',
+          channel: data.uploader || data.channel || 'Desconhecido',
+          duration: data.duration || 0,
+          durationFormatted: formatDuration(data.duration || 0),
+          thumbnail: data.thumbnail || `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
+          views: data.view_count || null
+        };
+      }
+    } catch (_) {
+      continue;
+    }
+  }
+
+  // 2. Fallback Ultrarrápido via oEmbed Oficial do YouTube (200ms, sem bloqueio de bot)
   try {
-    const webData = await resolveVideoInfo(cleanUrl);
-    if (webData && webData.title) {
+    const oembedUrl = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`;
+    const res = await fetch(oembedUrl, { signal: AbortSignal.timeout(4000) });
+    if (res.ok) {
+      const data = await res.json();
       return {
         videoId,
         url: cleanUrl,
-        title: webData.title,
-        channel: 'YouTube',
-        duration: webData.duration || 0,
-        durationFormatted: formatDuration(webData.duration || 0),
-        thumbnail: webData.thumbnail || `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
+        title: data.title || 'Vídeo do YouTube',
+        channel: data.author_name || 'Desconhecido',
+        duration: 0,
+        durationFormatted: '00:00',
+        thumbnail: data.thumbnail_url || `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
         views: null
       };
     }
-  } catch (webErr) {
-    console.warn(`[YouTube] Web Resolver info falhou (${webErr.message}). Tentando pytubefix...`);
-  }
+  } catch (_) {}
 
-  // 2. Tenta extrair com pytubefix (Bypass anti-bot nativo sem precisar de cookies)
+  // 3. Fallback pytubefix
   try {
     if (fs.existsSync(PYTUBE_INFO_SCRIPT)) {
-      const { stdout } = await execFileAsync('python3', [PYTUBE_INFO_SCRIPT, cleanUrl], { timeout: 15000 });
+      const { stdout } = await execFileAsync('python3', [PYTUBE_INFO_SCRIPT, cleanUrl], { timeout: 10000 });
       const data = JSON.parse(stdout.trim());
       if (data && data.title && !data.error) {
         return {
@@ -82,70 +133,16 @@ export async function fetchVideoInfo(url) {
         };
       }
     }
-  } catch (pyErr) {
-    console.warn(`[YouTube] pytube_info falhou (${pyErr.message}). Tentando yt-dlp...`);
-  }
+  } catch (_) {}
 
-  // 2. Fallback com yt-dlp
-  try {
-    const args = [
-      '--dump-json',
-      '--no-warnings',
-      '--no-playlist',
-      '--extractor-args', 'youtube:player_client=android,ios,web'
-    ];
-
-    const cookiesPath = getCookiesFilePath();
-    if (cookiesPath) {
-      args.push('--cookies', cookiesPath);
-    }
-
-    args.push(url);
-
-    const { stdout } = await execFileAsync('yt-dlp', args, { timeout: 15000 });
-    const data = JSON.parse(stdout);
-    return {
-      videoId,
-      url,
-      title: data.title || 'Vídeo do YouTube',
-      channel: data.uploader || data.channel || 'Desconhecido',
-      duration: data.duration || 0,
-      durationFormatted: formatDuration(data.duration || 0),
-      thumbnail: data.thumbnail || `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
-      views: data.view_count || null
-    };
-  } catch (err) {
-    console.warn(`[YouTube] yt-dlp não disponível ou falhou (${err.message}). Tentando oEmbed fallback...`);
-  }
-
-  // 2. Fallback via oEmbed (doesn't require yt-dlp or API key)
-  try {
-    const oembedUrl = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`;
-    const res = await fetch(oembedUrl, { signal: AbortSignal.timeout(6000) });
-    if (res.ok) {
-      const data = await res.json();
-      return {
-        videoId,
-        url: `https://www.youtube.com/watch?v=${videoId}`,
-        title: data.title || 'Vídeo do YouTube',
-        channel: data.author_name || 'Desconhecido',
-        duration: 0, // oEmbed doesn't include duration
-        durationFormatted: 'Aguardando download',
-        thumbnail: data.thumbnail_url || `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`
-      };
-    }
-  } catch (oembedErr) {
-    console.warn(`[YouTube] oEmbed falhou: ${oembedErr.message}`);
-  }
-
-  // 3. Fallback genérico com o ID extraído
+  // 4. Fallback genérico
   return {
     videoId,
-    url,
+    url: cleanUrl,
     title: `Vídeo YouTube (${videoId})`,
     channel: 'YouTube',
     duration: 0,
-    durationFormatted: 'Aguardando download',
+    durationFormatted: 'Aguardando',
     thumbnail: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`
   };
 }

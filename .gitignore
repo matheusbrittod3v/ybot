@@ -13,4 +13,4 @@ cookies.txt
 data/cookies.txt
 data/epg_banner.png
 .DS_Store
-
+.browser_session/

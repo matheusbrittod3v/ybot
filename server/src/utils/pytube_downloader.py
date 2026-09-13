@@ -1,121 +1,103 @@
 #!/usr/bin/env python3
 """
 pytube_downloader.py
-Downloader automático para TV Braza que contorna bloqueios de robô no YouTube
-usando clientes como VISION_OS, IOS, MWEB e Safari que não exigem verificação de bot.
+Downloader de Alta Velocidade para TV Braza
+1. Fast-Path com yt-dlp + cookies.txt (Download nativo em MP4 com velocidade máxima e sem bloqueio).
+2. Fallback via pytubefix com clientes alternativos (ANDROID_VR / VISION_OS).
 """
 import sys
 import os
-import time
 import subprocess
-from pytubefix import YouTube
+import re
 
-def on_progress(stream, chunk, bytes_remaining):
-    total_size = stream.filesize
-    if not total_size or total_size == 0:
-        return
-    bytes_downloaded = total_size - bytes_remaining
-    percent = (bytes_downloaded / total_size) * 100
-    print(f"[PROGRESS] {percent:.1f}%", flush=True)
+def find_cookies_file():
+    candidates = [
+        os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../data/cookies.txt')),
+        os.path.abspath(os.path.join(os.path.dirname(__file__), '../../data/cookies.txt')),
+        os.path.abspath(os.path.join(os.path.dirname(__file__), '../data/cookies.txt')),
+        '/app/data/cookies.txt',
+        './data/cookies.txt'
+    ]
+    for p in candidates:
+        if os.path.exists(p) and os.path.getsize(p) > 20:
+            return p
+    return None
 
 def download_video(url, output_path):
-    print(f"[PytubeDownloader] Inicializando download para: {url}", flush=True)
-    
+    print(f"[Downloader] Inicializando download de alta performance para: {url}", flush=True)
     out_dir = os.path.dirname(os.path.abspath(output_path))
-    out_filename = os.path.basename(output_path)
     os.makedirs(out_dir, exist_ok=True)
+    cookies_path = find_cookies_file()
 
-    # Clientes com menor incidência de bloqueio anti-bot do Google em datacenters
-    clients = ['VISION_OS', 'IOS', 'MWEB', 'WEB_SAFARI', 'ANDROID_VR', 'WEB']
-    last_err = None
+    # 1. Fast-Path via yt-dlp com cookies da sessão
+    yt_commands = [
+        [sys.executable, '-m', 'yt_dlp'],
+        ['yt-dlp']
+    ]
 
-    for client in clients:
+    for yt_bin in yt_commands:
         try:
-            print(f"[PytubeDownloader] Conectando via cliente: {client}...", flush=True)
-            yt = YouTube(url, client=client, on_progress_callback=on_progress)
-            title = yt.title
-            print(f"[PytubeDownloader] Conectado com sucesso ({client})! Título: {title}", flush=True)
+            cmd = yt_bin + [
+                '--no-playlist',
+                '--no-warnings',
+                '--extractor-args', 'youtube:player_client=android,web',
+                '-f', 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+                '--merge-output-format', 'mp4',
+                '-o', output_path,
+                '--newline',
+                url
+            ]
+            if cookies_path:
+                cmd.extend(['--cookies', cookies_path])
 
-            # 1. Procurar melhor stream de vídeo (8K -> 4K -> 2K -> 1080p -> 720p -> melhor disponível)
-            video_stream = None
-            for res in ['4320p', '2160p', '1440p', '1080p', '720p', '480p']:
-                video_stream = yt.streams.filter(res=res, type='video').first()
-                if video_stream:
-                    print(f"[PytubeDownloader] Stream de vídeo encontrada: {res} ({video_stream.mime_type})", flush=True)
-                    break
+            print(f"[Downloader] Disparando motor primário yt-dlp...", flush=True)
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1
+            )
 
-            if not video_stream:
-                video_stream = yt.streams.filter(type='video').first()
+            for line in iter(proc.stdout.readline, ''):
+                line_str = line.strip()
+                # Parse de progresso padrão yt-dlp: [download]  45.2% of 12.34MiB at 3.45MiB/s
+                m = re.search(r'\[download\]\s+([\d.]+)%', line_str)
+                if m:
+                    print(f"[PROGRESS] {m.group(1)}%", flush=True)
 
-            if not video_stream:
-                raise Exception("Nenhuma stream de vídeo encontrada para este cliente.")
+            proc.stdout.close()
+            ret_code = proc.wait()
 
-            # 2. Se a stream for progressiva (já tem áudio embutido), baixa direto para o arquivo final!
-            if video_stream.is_progressive:
-                print(f"[PytubeDownloader] Baixando stream progressiva completa...", flush=True)
-                video_stream.download(output_path=out_dir, filename=out_filename)
-                print(f"[PytubeDownloader] Download progressivo concluído com sucesso!", flush=True)
+            if ret_code == 0 and os.path.exists(output_path) and os.path.getsize(output_path) > 10240:
+                print(f"[Downloader] ✅ Download concluído com sucesso via yt-dlp em: {output_path}", flush=True)
                 return True
-
-            # 3. Stream adaptativa: precisa baixar vídeo + áudio e juntar com FFmpeg
-            audio_stream = yt.streams.filter(only_audio=True).first()
-            if not audio_stream:
-                audio_stream = yt.streams.get_audio_only()
-
-            temp_v = os.path.join(out_dir, f"temp_v_{int(time.time())}_{out_filename}")
-            temp_a = os.path.join(out_dir, f"temp_a_{int(time.time())}_{out_filename}")
-
-            try:
-                print(f"[PytubeDownloader] Baixando faixa de vídeo ({video_stream.resolution})...", flush=True)
-                video_stream.download(output_path=out_dir, filename=os.path.basename(temp_v))
-
-                print(f"[PytubeDownloader] Baixando faixa de áudio...", flush=True)
-                audio_stream.download(output_path=out_dir, filename=os.path.basename(temp_a))
-
-                print(f"[PytubeDownloader] Mesclando áudio e vídeo via FFmpeg...", flush=True)
-                cmd = [
-                    'ffmpeg', '-y',
-                    '-i', temp_v,
-                    '-i', temp_a,
-                    '-c:v', 'copy',
-                    '-c:a', 'aac',
-                    '-b:a', '192k',
-                    '-shortest',
-                    output_path
-                ]
-                res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                if res.returncode != 0:
-                    print(f"[PytubeDownloader] Aviso: cópia direta falhou, tentando fallback ffmpeg...", flush=True)
-                    cmd_fallback = [
-                        'ffmpeg', '-y',
-                        '-i', temp_v,
-                        '-i', temp_a,
-                        '-c:v', 'libx264', '-preset', 'ultrafast',
-                        '-c:a', 'aac',
-                        '-shortest',
-                        output_path
-                    ]
-                    res_fallback = subprocess.run(cmd_fallback, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                    if res_fallback.returncode != 0:
-                        raise Exception(f"Erro no FFmpeg: {res_fallback.stderr.decode('utf-8', errors='ignore')}")
-
-                print(f"[PytubeDownloader] Vídeo final mesclado com sucesso em: {output_path}", flush=True)
-                return True
-
-            finally:
-                for f in [temp_v, temp_a]:
-                    if os.path.exists(f):
-                        try:
-                            os.remove(f)
-                        except Exception:
-                            pass
-
         except Exception as e:
-            print(f"[PytubeDownloader] Falha ao processar com {client}: {e}", flush=True)
-            last_err = e
+            print(f"[Downloader] Aviso: tentativa yt-dlp falhou ({e}). Tentando fallback...", flush=True)
             continue
 
-    raise Exception(f"Não foi possível baixar o vídeo em nenhum cliente: {last_err}")
+    # 2. Fallback via pytubefix
+    try:
+        from pytubefix import YouTube
+        for client in ['ANDROID_VR', 'VISION_OS', 'IOS']:
+            try:
+                print(f"[Downloader] Tentando fallback pytubefix ({client})...", flush=True)
+                yt = YouTube(url, client=client)
+                stream = yt.streams.filter(progressive=True, file_extension='mp4').order_by('resolution').desc().first()
+                if not stream:
+                    stream = yt.streams.get_highest_resolution()
+
+                if stream:
+                    stream.download(output_path=out_dir, filename=os.path.basename(output_path))
+                    if os.path.exists(output_path) and os.path.getsize(output_path) > 10240:
+                        print(f"[Downloader] ✅ Download concluído via pytubefix ({client})!", flush=True)
+                        return True
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+    raise Exception("Não foi possível concluir o download em nenhum dos motores disponíveis.")
 
 if __name__ == '__main__':
     if len(sys.argv) < 3:
@@ -129,5 +111,5 @@ if __name__ == '__main__':
         download_video(url_arg, out_arg)
         sys.exit(0)
     except Exception as ex:
-        print(f"[PytubeDownloader Erro] {ex}", file=sys.stderr, flush=True)
+        print(f"[Downloader Erro] {ex}", file=sys.stderr, flush=True)
         sys.exit(1)

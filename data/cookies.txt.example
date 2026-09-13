@@ -1,0 +1,4 @@
+# Netscape HTTP Cookie File
+# http://curl.haxx.se/rfc/cookie_spec.html
+# Exemplo de formato para cookies.txt
+# Para gerar os cookies reais da sua conta, execute: npm run login-cookies

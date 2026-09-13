@@ -126,61 +126,69 @@ function buildScheduleOverlaySteps(currentInput, settings, currentItemId = null,
 }
 
 async function resolveDirectStreams(url) {
-  // 1. Motor Primário via stream_resolver (pytubefix / yt-dlp - GoogleVideo CDN ultra estável)
+  // 1. Motor Primário via stream_resolver (Fast-Path yt-dlp + cookies.txt + Pre-flight Check)
   try {
-    console.log('[Streamer Direct] Resolvendo fluxo via stream_resolver (GoogleVideo CDN)...');
-    const { stdout } = await execFileAsync('python3', [RESOLVER_SCRIPT, url], { timeout: 25000, input: '' });
-    const data = JSON.parse(stdout.trim());
-    if (data.success && data.videoUrl) {
-      console.log(`[Streamer Direct] Fluxo resolvido via ${data.provider} (${data.resolution}) com sucesso!`);
-      return data;
+    console.log('[Streamer Direct] Resolvendo fluxo via stream_resolver (Fast-Path + cookies)...');
+    const { stdout } = await execFileAsync('python3', [RESOLVER_SCRIPT, url], { timeout: 18000, input: '' });
+    const cleanOutput = stdout.trim().split('\n').find(l => l.trim().startsWith('{'));
+    if (cleanOutput) {
+      const data = JSON.parse(cleanOutput);
+      if (data.success && data.videoUrl) {
+        console.log(`[Streamer Direct] Fluxo resolvido via ${data.provider} (${data.resolution}) de primeira!`);
+        return data;
+      }
     }
   } catch (err) {
-    console.warn('[Streamer Direct] stream_resolver falhou:', err.message);
+    console.warn('[Streamer Direct] stream_resolver aviso:', err.message);
   }
 
-  // 2. Fallback Secundário Web Resolver
+  // 2. Fallback Secundário via python3 -m yt_dlp / yt-dlp CLI com cookies
   try {
-    console.log('[Streamer Direct] Tentando fallback via Web Resolver...');
-    const webData = await resolveDownloadUrl(url, ['720', '1080', '480', '360']);
-    if (webData && webData.downloadUrl) {
-      console.log(`[Streamer Direct] Fluxo Web resolvido em ${webData.quality}p!`);
-      return {
-        success: true,
-        provider: `WebResolver_${webData.quality}p`,
-        videoUrl: webData.downloadUrl,
-        audioUrl: null,
-        isProgressive: true,
-        resolution: `${webData.quality}p`
-      };
-    }
-  } catch (err) {
-    console.warn('[Streamer Direct] Web Resolver fallback indisponível:', err.message);
-  }
+    console.log('[Streamer Direct] Tentando fallback secundário via yt-dlp com cookies...');
+    const candidates = [
+      path.join(DATA_DIR, 'cookies.txt'),
+      path.resolve(__dirname, '../../../data/cookies.txt'),
+      path.resolve(__dirname, '../../data/cookies.txt'),
+      '/app/data/cookies.txt'
+    ];
+    let cookiesPath = candidates.find(p => fs.existsSync(p) && fs.statSync(p).size > 20);
 
-  // 3. Fallback Terciário via yt-dlp CLI direto
-  try {
-    console.log('[Streamer Direct] Tentando fallback direto via yt-dlp CLI com bypass...');
-    const cookiesPath = path.join(DATA_DIR, 'cookies.txt');
-    const ytArgs = ['--no-playlist', '--extractor-args', 'youtube:player_client=android,web', '-g', '-f', 'b/bestvideo+bestaudio/best', url];
-    if (fs.existsSync(cookiesPath) && fs.statSync(cookiesPath).size > 0) {
-      ytArgs.splice(1, 0, '--cookies', cookiesPath);
-    }
-    const { stdout } = await execFileAsync('yt-dlp', ytArgs, { timeout: 30000 });
-    const lines = stdout.trim().split('\n').map(l => l.trim()).filter(Boolean);
-    if (lines.length > 0) {
-      console.log(`[Streamer Direct] Fluxo resolvido via yt-dlp CLI direto!`);
-      return {
-        success: true,
-        provider: 'yt-dlp_cli_direct',
-        videoUrl: lines[0],
-        audioUrl: lines.length > 1 ? lines[1] : null,
-        isProgressive: lines.length === 1,
-        resolution: '720p'
-      };
+    const attempts = [
+      { cmd: 'python3', prefixArgs: ['-m', 'yt_dlp'] },
+      { cmd: 'yt-dlp', prefixArgs: [] }
+    ];
+
+    for (const att of attempts) {
+      try {
+        const ytArgs = [
+          ...att.prefixArgs,
+          '--no-playlist',
+          '--no-warnings',
+          '--extractor-args', 'youtube:player_client=android,web',
+          '-g',
+          '-f', 'bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/best',
+          url
+        ];
+        if (cookiesPath) {
+          ytArgs.splice(att.prefixArgs.length, 0, '--cookies', cookiesPath);
+        }
+        const { stdout } = await execFileAsync(att.cmd, ytArgs, { timeout: 15000 });
+        const lines = stdout.trim().split('\n').map(l => l.trim()).filter(l => l.startsWith('http'));
+        if (lines.length > 0) {
+          console.log(`[Streamer Direct] Fluxo resolvido com sucesso via fallback yt-dlp!`);
+          return {
+            success: true,
+            provider: 'yt-dlp_direct_fast',
+            videoUrl: lines[0],
+            audioUrl: lines.length > 1 ? lines[1] : null,
+            isProgressive: lines.length === 1,
+            resolution: '1080p'
+          };
+        }
+      } catch (_) {}
     }
   } catch (err) {
-    console.warn('[Streamer Direct] Fallback yt-dlp CLI indisponível:', err.message);
+    console.warn('[Streamer Direct] Fallback yt-dlp indisponível:', err.message);
   }
 
   return null;
