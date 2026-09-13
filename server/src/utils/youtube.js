@@ -55,7 +55,24 @@ export async function fetchVideoInfo(url) {
   const cleanUrl = `https://www.youtube.com/watch?v=${videoId}`;
   const cookiesPath = getCookiesFilePath();
 
-  // 1. Fast-Path: yt-dlp nativo com cookies (Precisão 100% de primeira)
+  // 1. Motor Primário: Web Resolver (Cloudflare CDN - Instantâneo e imune a bloqueios de bot)
+  try {
+    const webData = await resolveVideoInfo(cleanUrl);
+    if (webData && webData.title) {
+      return {
+        videoId,
+        url: cleanUrl,
+        title: webData.title,
+        channel: 'YouTube',
+        duration: webData.duration || 0,
+        durationFormatted: formatDuration(webData.duration || 0),
+        thumbnail: webData.thumbnail || `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
+        views: null
+      };
+    }
+  } catch (_) {}
+
+  // 2. Fallback Secundário: yt-dlp nativo
   const ytAttempts = [
     { cmd: 'python3', args: ['-m', 'yt_dlp'] },
     { cmd: 'yt-dlp', args: [] },

@@ -138,25 +138,9 @@ class DownloaderEngine {
     });
     this.broadcast('download_start', { item: db.getQueueItem(item.id) });
 
-    // 1. Motor Primário: Fast-Path com yt-dlp + cookies.txt (Download nativo direto em MP4)
-    console.log(`[Downloader] [Motor 1 Fast-Path] Disparando download para "${item.title}"...`);
-    const pytubeResult = await this.downloadWithPytube(item, cleanUrl, targetFile);
-    if (pytubeResult.success) {
-      return pytubeResult;
-    }
-
-    console.warn(`[Downloader] Motor 1 não completou. Tentando Motor 2 (yt-dlp CLI)...`);
-
-    // 2. Fallback via yt-dlp direto
-    const ytDlpResult = await this.downloadWithYtDlp(item, targetFile);
-    if (ytDlpResult.success) {
-      return ytDlpResult;
-    }
-
-    console.warn(`[Downloader] Motores locais falharam. Tentando fallback Web Resolver...`);
-
-    // 3. Fallback de emergência via Web Resolver
+    // 1. Motor Primário: Web Resolver (Cloudflare CDN - Download direto na nuvem sem bloqueio de IP)
     try {
+      console.log(`[Downloader] [Motor 1 Cloudflare CDN] Disparando download para "${item.title}"...`);
       const abortController = new AbortController();
       this.activeDownload = {
         itemId: item.id,
@@ -189,13 +173,26 @@ class DownloaderEngine {
           filePath: targetFile,
           fileSize: stats.size
         });
-        console.log(`[Downloader] Download de "${item.title}" concluído via Web Resolver (${(stats.size / 1024 / 1024).toFixed(1)} MB)!`);
+        console.log(`[Downloader] ✅ Download de "${item.title}" concluído via Cloudflare CDN (${(stats.size / 1024 / 1024).toFixed(1)} MB)!`);
         this.broadcast('download_complete', { item: updated });
         return { success: true, item: updated };
       }
     } catch (webErr) {
-      console.warn(`[Downloader] Web Resolver falhou: ${webErr.message}`);
+      console.warn(`[Downloader] Motor Cloudflare indisponível: ${webErr.message}. Tentando fallback...`);
       this.activeDownload = null;
+    }
+
+    // 2. Fallback Secundário: yt-dlp local com ANDROID_VR
+    console.log(`[Downloader] [Motor 2 Fallback] Tentando via yt-dlp para "${item.title}"...`);
+    const pytubeResult = await this.downloadWithPytube(item, cleanUrl, targetFile);
+    if (pytubeResult.success) {
+      return pytubeResult;
+    }
+
+    // 3. Fallback Terciário: yt-dlp CLI direto
+    const ytDlpResult = await this.downloadWithYtDlp(item, targetFile);
+    if (ytDlpResult.success) {
+      return ytDlpResult;
     }
 
     db.updateQueueItem(item.id, {

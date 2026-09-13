@@ -126,34 +126,15 @@ function buildScheduleOverlaySteps(currentInput, settings, currentItemId = null,
 }
 
 async function resolveDirectStreams(url) {
-  // 1. Motor Primário via stream_resolver (Fast-Path yt-dlp + cookies.txt + ANDROID_VR)
+  // 1. Motor Primário: Web Resolver (Cloudflare CDN - Bypass Total de bloqueios de IP de Datacenter e Bots)
   try {
-    console.log('[Streamer Direct] Resolvendo fluxo via stream_resolver (Fast-Path + ANDROID_VR)...');
-    const { stdout, stderr } = await execFileAsync('python3', [RESOLVER_SCRIPT, url], { timeout: 35000, input: '' });
-    if (stderr && stderr.trim()) {
-      console.warn('[Streamer Direct Resolver Debug]:', stderr.trim().slice(0, 300));
-    }
-    const cleanOutput = stdout.trim().split('\n').find(l => l.trim().startsWith('{'));
-    if (cleanOutput) {
-      const data = JSON.parse(cleanOutput);
-      if (data.success && data.videoUrl) {
-        console.log(`[Streamer Direct] Fluxo resolvido via ${data.provider} (${data.resolution}) de primeira!`);
-        return data;
-      }
-    }
-  } catch (err) {
-    console.warn('[Streamer Direct] stream_resolver aviso:', err.message);
-  }
-
-  // 2. Fallback Secundário via Web Resolver (Cloudflare CDN - Bypass total de bloqueio de IP de VPS)
-  try {
-    console.log('[Streamer Direct] Tentando fallback via Web Resolver (Cloudflare CDN)...');
-    const webData = await resolveDownloadUrl(url, ['720', '1080', '480']);
+    console.log('[Streamer Direct] ⚡ Resolvendo via Motor Primário Web Resolver (Cloudflare CDN)...');
+    const webData = await resolveDownloadUrl(url, ['720', '1080', '480', '360']);
     if (webData && webData.downloadUrl) {
-      console.log(`[Streamer Direct] ✅ Fluxo Web resolvido em ${webData.quality}p com sucesso via Cloudflare!`);
+      console.log(`[Streamer Direct] ✅ Fluxo resolvido de PRIMEIRA em ${webData.quality}p via Cloudflare CDN!`);
       return {
         success: true,
-        provider: `WebResolver_${webData.quality}p`,
+        provider: `CloudflareCDN_${webData.quality}p`,
         videoUrl: webData.downloadUrl,
         audioUrl: null,
         isProgressive: true,
@@ -161,7 +142,26 @@ async function resolveDirectStreams(url) {
       };
     }
   } catch (err) {
-    console.warn('[Streamer Direct] Web Resolver fallback aviso:', err.message);
+    console.warn('[Streamer Direct] Motor Primário Cloudflare indisponível:', err.message);
+  }
+
+  // 2. Fallback Secundário via stream_resolver (yt-dlp + ANDROID_VR)
+  try {
+    console.log('[Streamer Direct] Tentando fallback secundário via stream_resolver (ANDROID_VR)...');
+    const { stdout, stderr } = await execFileAsync('python3', [RESOLVER_SCRIPT, url], { timeout: 25000, input: '' });
+    if (stderr && stderr.trim()) {
+      console.warn('[Streamer Direct Resolver Debug]:', stderr.trim().slice(0, 300));
+    }
+    const cleanOutput = stdout.trim().split('\n').find(l => l.trim().startsWith('{'));
+    if (cleanOutput) {
+      const data = JSON.parse(cleanOutput);
+      if (data.success && data.videoUrl) {
+        console.log(`[Streamer Direct] Fluxo resolvido via ${data.provider} (${data.resolution})!`);
+        return data;
+      }
+    }
+  } catch (err) {
+    console.warn('[Streamer Direct] stream_resolver aviso:', err.message);
   }
 
   // 3. Fallback Terciário via yt-dlp CLI
