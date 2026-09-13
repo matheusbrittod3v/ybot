@@ -370,7 +370,7 @@ class StreamerEngine {
     }
 
     if (targets.length === 1) {
-      args.push('-f', 'flv', targets[0].url);
+      args.push('-flvflags', 'no_duration_filesize', '-f', 'flv', targets[0].url);
       return targets;
     }
 
@@ -607,7 +607,6 @@ class StreamerEngine {
         '-b:a', audioBitrate,
         '-ar', '48000',
         '-ac', '2',
-        '-flvflags', 'no_duration_filesize',
         '-max_muxing_queue_size', '4096'
       ];
 
@@ -767,8 +766,14 @@ class StreamerEngine {
       });
     }
 
+    const recentStderr = [];
     proc.stderr.on('data', (chunk) => {
       const line = chunk.toString();
+      recentStderr.push(line);
+      if (recentStderr.length > 30) {
+        recentStderr.shift();
+      }
+
       // Parse métricas do FFmpeg: frame= 120 fps= 30 q=28.0 size= 1240kB time=00:00:04.00 bitrate=2540.2kbits/s speed=1.00x
       const match = line.match(/fps=\s*([\d.]+).*time=\s*([\d:.]+).*bitrate=\s*([\d.]+kbits\/s)/);
       const speedMatch = line.match(/speed=\s*([\d.]+x)/);
@@ -794,14 +799,18 @@ class StreamerEngine {
         });
       } else {
         const trimmed = line.trim();
-        if (trimmed && (trimmed.includes('Error') || trimmed.includes('error') || trimmed.includes('Server returned') || trimmed.includes('Connection refused') || trimmed.includes('Invalid data') || trimmed.includes('Failed to open'))) {
-          console.warn(`[Streamer FFmpeg aviso] ${trimmed.slice(0, 180)}`);
+        if (trimmed && (trimmed.includes('Error') || trimmed.includes('error') || trimmed.includes('Server returned') || trimmed.includes('Connection refused') || trimmed.includes('Invalid data') || trimmed.includes('Failed to open') || trimmed.includes('Option') || trimmed.includes('incorrect codec'))) {
+          console.warn(`[Streamer FFmpeg aviso] ${trimmed.slice(0, 200)}`);
         }
       }
     });
 
     proc.on('close', (code) => {
       console.log(`[Streamer] Processo FFmpeg finalizado (código ${code})`);
+      if (code !== 0 && code !== null && recentStderr.length > 0) {
+        const errorSummary = recentStderr.join('').split('\n').filter(l => l.trim().length > 0).slice(-10).join('\n');
+        console.warn(`[Streamer FFmpeg detalhes do erro (código ${code})]:\n${errorSummary}`);
+      }
       if (this.ffmpegProc === proc) {
         this.ffmpegProc = null;
         onFinish(code);
@@ -896,7 +905,6 @@ class StreamerEngine {
         '-b:a', audioBitrate,
         '-ar', '48000',
         '-ac', '2',
-        '-flvflags', 'no_duration_filesize',
         '-max_muxing_queue_size', '4096'
       ];
 
@@ -946,7 +954,6 @@ class StreamerEngine {
         '-b:a', audioBitrate,
         '-ar', '48000',
         '-ac', '2',
-        '-flvflags', 'no_duration_filesize',
         '-max_muxing_queue_size', '4096'
       ];
     }
