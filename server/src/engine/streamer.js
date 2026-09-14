@@ -299,18 +299,14 @@ class StreamerEngine {
         setTimeout(() => this.playNextInQueue(), 1000);
       }
 
-      // 4. Auto-recuperação de vídeos travados com erro na fila
-      if (this.currentMode === 'STANDBY' && !this.isResolving) {
-        const queue = db.getQueue();
-        const errorItem = queue.find(i => i.status === 'error');
-        if (errorItem) {
-          console.log(`[Streamer Watchdog] 🔄 Auto-recuperação ativada! Destravando vídeo com erro: "${errorItem.title}"`);
-          db.updateQueueItem(errorItem.id, {
-            status: 'ready',
-            error: null,
-            downloadProgress: 100,
-            downloadSpeed: '⚡ Stream Direto (Sem Anúncios)'
-          });
+      // 4. Auto-recuperação de vídeos marcados com erro na fila
+      const queue = db.getQueue();
+      const hasErrors = queue.some(i => i.status === 'error');
+      if (hasErrors) {
+        console.log('[Streamer Watchdog] 🔄 Destravando automaticamente todos os vídeos da fila marcados com erro...');
+        db.resetQueueErrors();
+        this.broadcast('queue_updated', { queue: db.getQueue() });
+        if (this.currentMode === 'STANDBY' && !this.isResolving) {
           setTimeout(() => this.playNextInQueue(), 500);
         }
       }

@@ -17,6 +17,18 @@ function formatMySqlDateTime(dateInput) {
   return d.toISOString().slice(0, 19).replace('T', ' ');
 }
 
+function formatDurationSeconds(totalSeconds) {
+  const s = Math.floor(Math.max(0, totalSeconds || 0));
+  if (!s) return '00:00';
+  const hrs = Math.floor(s / 3600);
+  const mins = Math.floor((s % 3600) / 60);
+  const secs = s % 60;
+  if (hrs > 0) {
+    return `${hrs}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  }
+  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
+
 function resolveDataDir() {
   const candidates = [
     process.env.DATA_DIR,
@@ -322,13 +334,15 @@ class Database {
   mapRowToQueueItem(r) {
     const isFinished = r.status === 'finished';
     const isPlaying = r.status === 'playing';
+    const dur = Number(r.duration) || 0;
     return {
       id: r.id,
       order: r.order_index,
       title: r.title,
       url: r.url,
-      duration: Number(r.duration) || 0,
-      status: isFinished ? 'finished' : (isPlaying ? 'playing' : 'ready'),
+      duration: dur,
+      durationFormatted: formatDurationSeconds(dur),
+      status: isFinished ? 'finished' : (isPlaying ? 'playing' : (r.status === 'error' ? 'error' : 'ready')),
       streamMode: r.stream_mode || 'direct',
       filePath: r.file_path || null,
       thumbnail: r.thumbnail_url || null,
@@ -515,6 +529,24 @@ class Database {
         .catch(err => console.error('[DB MySQL] Erro ao remover item da fila:', err.message));
     }
     this.saveJsonBackup();
+  }
+
+  resetQueueErrors() {
+    let count = 0;
+    for (const item of this.data.queue) {
+      if (item.status === 'error') {
+        item.status = 'ready';
+        item.error = null;
+        count++;
+      }
+    }
+    if (this.pool && count > 0) {
+      this.pool.query("UPDATE queue_items SET status = 'ready' WHERE status = 'error'").catch(() => {});
+    }
+    if (count > 0) {
+      this.saveJsonBackup();
+    }
+    return this.getQueue();
   }
 
   reorderQueue(orderedIds) {
