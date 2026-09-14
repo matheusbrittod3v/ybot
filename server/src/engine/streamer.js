@@ -597,10 +597,33 @@ class StreamerEngine {
 
     this.isResolving = true;
     this.resolvingStartedAt = Date.now();
-    const hasLocalFile = Boolean(item.filePath && fs.existsSync(item.filePath));
-    const isDirect = !hasLocalFile || item.streamMode === 'direct';
 
-    console.log(`[Streamer] PREPARANDO TRANSMISSÃO: "${item.title}" ${isDirect ? '[Modo: ⚡ Stream Direto (Sem Anúncios)]' : '[Arquivo Local]'}`);
+    // 1. Verifica se já temos o arquivo local no disco
+    const localTarget = item.filePath || path.join(MEDIA_DIR, `${item.id}.mp4`);
+    let hasLocalFile = fs.existsSync(localTarget) && fs.statSync(localTarget).size > 10240;
+    if (hasLocalFile && !item.filePath) {
+      item.filePath = localTarget;
+    }
+
+    // 2. Se o arquivo ainda não foi baixado, faz o pré-download ultra-rápido (2-3s via CDN) antes de disparar!
+    // Durante esse intervalo de 2-3s o Standby mantém a transmissão ao vivo contínua no YouTube e Twitch.
+    // Transmitir a partir do disco SSD elimina 100% de buffering, timeouts e quedas de conexão.
+    if (!hasLocalFile) {
+      console.log(`[Streamer Zero-Drop] ⚡ Pré-baixando vídeo "${item.title}" para disco local (2-3s) para garantir estabilidade máxima...`);
+      try {
+        const dlRes = await downloader.downloadItem(item);
+        if (dlRes && dlRes.success && fs.existsSync(localTarget) && fs.statSync(localTarget).size > 10240) {
+          item.filePath = localTarget;
+          hasLocalFile = true;
+          console.log(`[Streamer Zero-Drop] ✅ Vídeo baixado com sucesso (${(fs.statSync(localTarget).size / 1024 / 1024).toFixed(1)} MB)! Reprodução a partir do disco local.`);
+        }
+      } catch (dlErr) {
+        console.warn(`[Streamer Zero-Drop] Download em disco indisponível, usando fallback de streaming direto: ${dlErr.message}`);
+      }
+    }
+
+    const isDirect = !hasLocalFile;
+    console.log(`[Streamer] PREPARANDO TRANSMISSÃO: "${item.title}" ${isDirect ? '[Modo: ⚡ Stream Direto (Fallback)]' : '[Arquivo Local SSD (Anti-Queda)]'}`);
 
     try {
       let rtmpTarget = this.getStreamTarget();

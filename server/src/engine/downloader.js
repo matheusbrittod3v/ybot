@@ -74,25 +74,25 @@ class DownloaderEngine {
       const currentItem = queue[currentIdx];
       const nextItem = queue.slice(currentIdx + 1).find(i => i.status !== 'finished');
 
-      // 1. Se o vídeo atual for de download em disco e não estiver baixado, baixa ele primeiro!
-      if (currentItem && currentItem.streamMode !== 'direct') {
+      // 1. Se o vídeo atual não estiver baixado no disco, baixa ele primeiro para garantir 100% de estabilidade!
+      if (currentItem) {
         const currentFilePath = this.getFilePath(currentItem.id);
         const currentHasFile = fs.existsSync(currentFilePath) && fs.statSync(currentFilePath).size > 10240;
 
-        if (!currentHasFile && currentItem.status !== 'downloading') {
-          console.log(`[Downloader] Prioridade: Baixando vídeo atual da programação (${currentItem.title})`);
+        if (!currentHasFile && currentItem.status !== 'downloading' && currentItem.status !== 'error') {
+          console.log(`[Downloader] Prioridade: Baixando vídeo atual para reprodução local estável (${currentItem.title})`);
           await this.downloadItem(currentItem);
           this.isChecking = false;
           return;
         }
       }
 
-      // 2. Se o vídeo atual já está pronto/baixado (ou é stream direto), baixa antecipadamente o PRÓXIMO da fila se for modo download!
-      if (nextItem && nextItem.streamMode !== 'direct') {
+      // 2. Baixa antecipadamente o PRÓXIMO da fila para troca zero-gap 100% lisa e local!
+      if (nextItem) {
         const nextFilePath = this.getFilePath(nextItem.id);
         const nextHasFile = fs.existsSync(nextFilePath) && fs.statSync(nextFilePath).size > 10240;
 
-        if (!nextHasFile && nextItem.status !== 'downloading') {
+        if (!nextHasFile && nextItem.status !== 'downloading' && nextItem.status !== 'error') {
           console.log(`[Downloader] Pré-download do próximo vídeo para troca suave (${nextItem.title})`);
           await this.downloadItem(nextItem);
         } else if (nextHasFile && nextItem.status !== 'ready' && nextItem.status !== 'playing') {
