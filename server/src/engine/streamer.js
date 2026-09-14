@@ -268,8 +268,11 @@ class StreamerEngine {
       // 2. Detecção de congelamento / silêncio do FFmpeg (Anti-Hang / Anti-Freeze)
       if (this.ffmpegProc) {
         const silenceMs = Date.now() - this.lastFfmpegOutputTime;
-        if (silenceMs > 15000) {
+        if (silenceMs > 18000) {
           console.warn(`[Streamer Watchdog] 🚨 TRAVAMENTO DO FFMPEG DETECTADO! Processo sem resposta há ${(silenceMs / 1000).toFixed(0)}s sem emitir frames. Reiniciando transmissão imediatamente para manter a live online no YouTube e Twitch...`);
+          if (this.currentRecentStderr && this.currentRecentStderr.length > 0) {
+            console.warn(`[Streamer Watchdog Últimas linhas do FFmpeg antes do kill]:\n${this.currentRecentStderr.slice(-15).join('\n')}`);
+          }
           this.lastFfmpegOutputTime = Date.now();
           this.killProcess();
           db.updatePlayoutState({ fps: 0, bitrate: '0k' });
@@ -285,7 +288,8 @@ class StreamerEngine {
 
           // Restaura sinal imediatamente via Standby
           this.streamStandby();
-          setTimeout(() => this.playNextInQueue(), 1200);
+          // Avança para o próximo vídeo após 5 segundos para dar tempo do Standby estabilizar
+          setTimeout(() => this.playNextInQueue(), 5000);
           return;
         } else if (silenceMs > 6000) {
           db.updatePlayoutState({ fps: 0, bitrate: '0k' });
@@ -296,18 +300,18 @@ class StreamerEngine {
       if (!this.ffmpegProc && !this.isResolving) {
         console.warn('[Streamer Watchdog] ⚠️ FFmpeg inativo detectado! Restaurando vinheta Standby para manter a Live 100% online...');
         this.streamStandby();
-        setTimeout(() => this.playNextInQueue(), 1000);
+        setTimeout(() => this.playNextInQueue(), 2000);
       }
 
-      // 4. Auto-recuperação de vídeos marcados com erro na fila
+      // 4. Auto-recuperação da grade: SOMENTE se todos os vídeos da fila tiverem sido concluídos ou estiverem em erro
       const queue = db.getQueue();
-      const hasErrors = queue.some(i => i.status === 'error');
-      if (hasErrors) {
-        console.log('[Streamer Watchdog] 🔄 Destravando automaticamente todos os vídeos da fila marcados com erro...');
+      const hasPlayable = queue.some(i => i.status === 'ready' || i.status === 'playing');
+      if (!hasPlayable && queue.length > 0) {
+        console.log('[Streamer Watchdog] 🔄 Todos os vídeos da fila foram concluídos ou com erro. Reiniciando ciclo da programação 24/7...');
         db.resetQueueErrors();
         this.broadcast('queue_updated', { queue: db.getQueue() });
         if (this.currentMode === 'STANDBY' && !this.isResolving) {
-          setTimeout(() => this.playNextInQueue(), 500);
+          setTimeout(() => this.playNextInQueue(), 2000);
         }
       }
     }, 3000);
@@ -452,19 +456,16 @@ class StreamerEngine {
 
     if (targets.length === 1) {
       const t = targets[0];
-      const flvFlags = t.flvFlags || 'no_duration_filesize';
-      args.push('-flvflags', flvFlags, '-f', 'flv', t.url);
+      args.push('-flvflags', 'no_duration_filesize', '-f', 'flv', t.url);
       return targets;
     }
 
-    // Multistream simultâneo (YouTube + Twitch) com interfaces isoladas via muxer 'tee':
-    // Codifica vídeo (H.264) e áudio (AAC) UMA ÚNICA VEZ e replica para ambos os servidores RTMP.
-    // O parâmetro 'onfail=ignore' garante que se uma das transmissões oscilar, a outra continua 100% no ar!
-    // 'flvflags=no_duration_filesize' é indispensável para o YouTube Studio tratar como live contínua sem duração finita.
+    // Multistream simultâneo (YouTube + Twitch) via muxer 'tee' com buffers assíncronos isolados (use_fifo=1):
+    // Cada conexão RTMP possui seu próprio worker thread e fila FIFO.
+    // Se a Twitch ou o YouTube oscilar ou atrasar, a outra plataforma permanece 100% no ar sem travar o encoder.
     args.push('-flags', '+global_header', '-f', 'tee');
     const teeOutputs = targets.map(t => {
-      const flvFlags = t.flvFlags ? `:flvflags=${t.flvFlags}` : ':flvflags=no_duration_filesize';
-      return `[f=flv:onfail=ignore${flvFlags}]${t.url}`;
+      return `[f=flv:onfail=ignore:use_fifo=1]${t.url}`;
     }).join('|');
     args.push(teeOutputs);
 
@@ -635,14 +636,12 @@ class StreamerEngine {
           console.log(`[Streamer Direct] Fluxos resolvidos via ${streamData.provider} (${streamData.resolution})! Iniciando broadcast com -re...`);
           const httpOptions = [
             '-user_agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            '-timeout', '10000000',
-            '-rw_timeout', '10000000',
+            '-timeout', '15000000',
             '-reconnect', '1',
-            '-reconnect_at_eof', '1',
             '-reconnect_streamed', '1',
-            '-reconnect_delay_max', '3',
-            '-analyzeduration', '3000000',
-            '-probesize', '3000000'
+            '-reconnect_delay_max', '5',
+            '-analyzeduration', '5000000',
+            '-probesize', '5000000'
           ];
           if (streamData.audioUrl && !streamData.isProgressive) {
             inputArgs = [
@@ -879,10 +878,11 @@ class StreamerEngine {
     }
 
     const recentStderr = [];
+    this.currentRecentStderr = recentStderr;
     proc.stderr.on('data', (chunk) => {
       const line = chunk.toString();
       recentStderr.push(line);
-      if (recentStderr.length > 30) {
+      if (recentStderr.length > 50) {
         recentStderr.shift();
       }
 
@@ -922,21 +922,22 @@ class StreamerEngine {
         });
       } else {
         const trimmed = line.trim();
-        if (trimmed && (trimmed.includes('Output slave') || trimmed.includes('Broken pipe') || trimmed.includes('Connection reset by peer') || trimmed.includes('Server error') || trimmed.includes('Error') || trimmed.includes('error') || trimmed.includes('Server returned') || trimmed.includes('Connection refused') || trimmed.includes('Invalid data') || trimmed.includes('Failed to open') || trimmed.includes('Option') || trimmed.includes('incorrect codec'))) {
-          console.warn(`[Streamer FFmpeg aviso] ${trimmed.slice(0, 200)}`);
+        if (trimmed && (trimmed.includes('Output slave') || trimmed.includes('Broken pipe') || trimmed.includes('Connection reset') || trimmed.includes('Server error') || trimmed.includes('Error') || trimmed.includes('error') || trimmed.includes('Server returned') || trimmed.includes('Connection refused') || trimmed.includes('Invalid data') || trimmed.includes('Failed to open') || trimmed.includes('Option') || trimmed.includes('incorrect codec') || trimmed.includes('fifo') || trimmed.includes('tee') || trimmed.includes('Opening') || trimmed.includes('rtmp'))) {
+          console.warn(`[Streamer FFmpeg aviso] ${trimmed.slice(0, 300)}`);
         }
       }
     });
 
-    proc.on('close', (code) => {
-      console.log(`[Streamer] Processo FFmpeg finalizado (código ${code})`);
+    proc.on('close', (code, signal) => {
+      console.log(`[Streamer] Processo FFmpeg finalizado (código: ${code}, sinal: ${signal})`);
       db.updatePlayoutState({ fps: 0, bitrate: '0k' });
-      if (code !== 0 && code !== null && recentStderr.length > 0) {
+      if ((code !== 0 || code === null) && recentStderr.length > 0 && !this.isReloading) {
         const errorSummary = recentStderr.join('').split('\n').filter(l => l.trim().length > 0).slice(-10).join('\n');
-        console.warn(`[Streamer FFmpeg detalhes do erro (código ${code})]:\n${errorSummary}`);
+        console.warn(`[Streamer FFmpeg saída recente (código: ${code}, sinal: ${signal})]:\n${errorSummary}`);
       }
       if (this.ffmpegProc === proc) {
         this.ffmpegProc = null;
+        this.currentRecentStderr = null;
         onFinish(code);
       }
     });
