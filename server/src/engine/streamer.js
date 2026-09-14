@@ -3,7 +3,7 @@ import path from 'path';
 import { spawn, execFile } from 'child_process';
 import { promisify } from 'util';
 import { fileURLToPath } from 'url';
-import { db, DATA_DIR } from '../db.js';
+import { db, DATA_DIR, MEDIA_DIR } from '../db.js';
 import { downloader } from './downloader.js';
 import { ensureStandbyVideo, getStandbyFilePath, standbyFileExists } from './standby.js';
 import { youtubeUpdater } from '../utils/youtube-updater.js';
