@@ -229,6 +229,8 @@ class StreamerEngine {
     this.standbyCheckInterval = null;
     this.isReloading = false;
     this.isResolving = false;
+    this.resolvingStartedAt = 0;
+    this.lastFfmpegOutputTime = Date.now();
     this.watchdogInterval = null;
     this.prefetchCache = new Map();
     this.isPrefetching = false;
@@ -243,16 +245,61 @@ class StreamerEngine {
     });
   }
 
+  isStreamingAlive() {
+    if (!this.shouldRun || !this.ffmpegProc) return false;
+    return (Date.now() - this.lastFfmpegOutputTime) < 12000;
+  }
+
   startWatchdog() {
     if (this.watchdogInterval) clearInterval(this.watchdogInterval);
     this.watchdogInterval = setInterval(() => {
       if (!this.shouldRun) return;
-      if (!this.ffmpegProc) {
-        console.warn('[Streamer Watchdog] ⚠️ FFmpeg inativo detectado! Restaurando vinheta Standby para manter a Live 100% online...');
-        this.streamStandby();
+
+      // 1. Timeout de proteção na resolução de link (máx 25s)
+      if (this.isResolving && this.resolvingStartedAt && (Date.now() - this.resolvingStartedAt > 25000)) {
+        console.warn('[Streamer Watchdog] ⚠️ Timeout ao resolver link do vídeo (>25s). Destravando motor...');
+        this.isResolving = false;
+        this.resolvingStartedAt = 0;
+        if (!this.ffmpegProc) {
+          this.streamStandby();
+        }
       }
 
-      // Auto-recuperação de vídeos travados com erro na fila
+      // 2. Detecção de congelamento / silêncio do FFmpeg (Anti-Hang / Anti-Freeze)
+      if (this.ffmpegProc) {
+        const silenceMs = Date.now() - this.lastFfmpegOutputTime;
+        if (silenceMs > 15000) {
+          console.warn(`[Streamer Watchdog] 🚨 TRAVAMENTO DO FFMPEG DETECTADO! Processo sem resposta há ${(silenceMs / 1000).toFixed(0)}s sem emitir frames. Reiniciando transmissão imediatamente para manter a live online no YouTube e Twitch...`);
+          this.lastFfmpegOutputTime = Date.now();
+          this.killProcess();
+          db.updatePlayoutState({ fps: 0, bitrate: '0k' });
+
+          if (this.currentMode === 'VIDEO' && this.currentItem) {
+            console.warn(`[Streamer Watchdog] Marcando erro no vídeo travado "${this.currentItem.title}" para avançar a fila...`);
+            db.updateQueueItem(this.currentItem.id, {
+              status: 'error',
+              error: 'Conexão travada ou timeout durante transmissão'
+            });
+            this.currentItem = null;
+          }
+
+          // Restaura sinal imediatamente via Standby
+          this.streamStandby();
+          setTimeout(() => this.playNextInQueue(), 1200);
+          return;
+        } else if (silenceMs > 6000) {
+          db.updatePlayoutState({ fps: 0, bitrate: '0k' });
+        }
+      }
+
+      // 3. Detecção de FFmpeg inativo / caído
+      if (!this.ffmpegProc && !this.isResolving) {
+        console.warn('[Streamer Watchdog] ⚠️ FFmpeg inativo detectado! Restaurando vinheta Standby para manter a Live 100% online...');
+        this.streamStandby();
+        setTimeout(() => this.playNextInQueue(), 1000);
+      }
+
+      // 4. Auto-recuperação de vídeos travados com erro na fila
       if (this.currentMode === 'STANDBY' && !this.isResolving) {
         const queue = db.getQueue();
         const errorItem = queue.find(i => i.status === 'error');
@@ -267,7 +314,7 @@ class StreamerEngine {
           setTimeout(() => this.playNextInQueue(), 500);
         }
       }
-    }, 4000);
+    }, 3000);
   }
 
   stopWatchdog() {
@@ -552,6 +599,7 @@ class StreamerEngine {
     }
 
     this.isResolving = true;
+    this.resolvingStartedAt = Date.now();
     const hasLocalFile = Boolean(item.filePath && fs.existsSync(item.filePath));
     const isDirect = !hasLocalFile || item.streamMode === 'direct';
 
@@ -591,10 +639,14 @@ class StreamerEngine {
           console.log(`[Streamer Direct] Fluxos resolvidos via ${streamData.provider} (${streamData.resolution})! Iniciando broadcast com -re...`);
           const httpOptions = [
             '-user_agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            '-rw_timeout', '15000000',
+            '-timeout', '10000000',
+            '-rw_timeout', '10000000',
             '-reconnect', '1',
+            '-reconnect_at_eof', '1',
             '-reconnect_streamed', '1',
-            '-reconnect_delay_max', '5'
+            '-reconnect_delay_max', '3',
+            '-analyzeduration', '3000000',
+            '-probesize', '3000000'
           ];
           if (streamData.audioUrl && !streamData.isProgressive) {
             inputArgs = [
@@ -759,10 +811,20 @@ class StreamerEngine {
         }
 
         this.currentItem = null;
-        // Zero-Gap: ativa imediatamente a vinheta de Standby para manter o fluxo RTMP 100% vivo sem 0 bps
+        // Zero-Gap: se o próximo vídeo já está pré-resolvido em cache, vai direto para ele.
+        // Caso contrário, ativa o Standby imediatamente para manter o fluxo RTMP vivo sem interrupção.
         if (this.shouldRun) {
-          console.log('[Streamer Zero-Gap] 🛡️ Mantendo Standby ativo na transição de vídeos...');
-          this.streamStandby();
+          const queue = db.getQueue();
+          const nextItem = queue.find(i => (!item || i.id !== item.id) && i.status !== 'finished' && i.status !== 'error');
+          const hasInstantReady = nextItem && (
+            (nextItem.filePath && fs.existsSync(nextItem.filePath)) ||
+            (this.prefetchCache && this.prefetchCache.has(nextItem.id))
+          );
+
+          if (!hasInstantReady) {
+            console.log('[Streamer Zero-Gap] 🛡️ Mantendo Standby ativo na transição de vídeos...');
+            this.streamStandby();
+          }
         }
         this.playNextInQueue();
       }, pipeSourceProc);
@@ -782,6 +844,7 @@ class StreamerEngine {
       console.error(`[Streamer] Falha ao preparar transmissão de "${item.title}":`, err.message);
       db.updateQueueItem(item.id, { status: 'error', error: err.message });
       this.isResolving = false;
+      this.resolvingStartedAt = 0;
       this.currentItem = null;
       if (this.shouldRun && !this.ffmpegProc) {
         this.streamStandby();
@@ -792,6 +855,7 @@ class StreamerEngine {
 
   spawnFfmpeg(args, onFinish, pipeSourceProc = null) {
     console.log(`[Streamer] Executando FFmpeg: ffmpeg ${args.slice(0, 6).join(' ')} ...`);
+    this.lastFfmpegOutputTime = Date.now();
     let proc;
     try {
       proc = spawn('ffmpeg', args);
@@ -830,15 +894,26 @@ class StreamerEngine {
       const match = line.match(/fps=\s*([\d.]+).*time=\s*([\d:.]+).*bitrate=\s*([\d.]+kbits\/s)/);
       const speedMatch = line.match(/speed=\s*([\d.]+x)/);
       if (match) {
+        this.lastFfmpegOutputTime = Date.now();
         const fps = parseFloat(match[1]);
         const timeStr = match[2];
         const bitrate = match[3];
         const speed = speedMatch ? speedMatch[1] : '1.00x';
 
+        let elapsedSec = 0;
+        try {
+          const parts = timeStr.split(':');
+          if (parts.length === 3) {
+            elapsedSec = Math.floor(parseFloat(parts[0]) * 3600 + parseFloat(parts[1]) * 60 + parseFloat(parts[2]));
+          }
+        } catch (_) {}
+
         db.updatePlayoutState({
           fps,
           bitrate,
           speed,
+          elapsedSeconds: elapsedSec,
+          elapsedFormatted: timeStr.split('.')[0],
           lastHeartbeat: Date.now()
         });
 
@@ -851,7 +926,7 @@ class StreamerEngine {
         });
       } else {
         const trimmed = line.trim();
-        if (trimmed && (trimmed.includes('Error') || trimmed.includes('error') || trimmed.includes('Server returned') || trimmed.includes('Connection refused') || trimmed.includes('Invalid data') || trimmed.includes('Failed to open') || trimmed.includes('Option') || trimmed.includes('incorrect codec'))) {
+        if (trimmed && (trimmed.includes('Output slave') || trimmed.includes('Broken pipe') || trimmed.includes('Connection reset by peer') || trimmed.includes('Server error') || trimmed.includes('Error') || trimmed.includes('error') || trimmed.includes('Server returned') || trimmed.includes('Connection refused') || trimmed.includes('Invalid data') || trimmed.includes('Failed to open') || trimmed.includes('Option') || trimmed.includes('incorrect codec'))) {
           console.warn(`[Streamer FFmpeg aviso] ${trimmed.slice(0, 200)}`);
         }
       }
@@ -859,6 +934,7 @@ class StreamerEngine {
 
     proc.on('close', (code) => {
       console.log(`[Streamer] Processo FFmpeg finalizado (código ${code})`);
+      db.updatePlayoutState({ fps: 0, bitrate: '0k' });
       if (code !== 0 && code !== null && recentStderr.length > 0) {
         const errorSummary = recentStderr.join('').split('\n').filter(l => l.trim().length > 0).slice(-10).join('\n');
         console.warn(`[Streamer FFmpeg detalhes do erro (código ${code})]:\n${errorSummary}`);

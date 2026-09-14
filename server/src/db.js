@@ -302,18 +302,19 @@ class Database {
     } else {
       const r = rows[0];
       this.data.playoutState = {
-        state: r.state || 'STANDBY',
+        state: r.state === 'PLAYING' ? 'STANDBY' : (r.state || 'STANDBY'),
         activeItemId: r.active_item_id || null,
         startedAt: r.started_at ? Number(r.started_at) : null,
         elapsed: Number(r.elapsed_seconds) || 0,
         elapsedSeconds: Number(r.elapsed_seconds) || 0,
         elapsedFormatted: r.elapsed_formatted || '00:00:00',
         duration: Number(r.duration) || 0,
-        fps: Number(r.fps) || 0,
-        bitrate: r.bitrate || '0k',
+        fps: 0,
+        bitrate: '0k',
         streamUptime: Number(r.stream_uptime) || 0,
         currentLiveTitle: r.current_live_title || '',
-        currentLiveThumb: r.current_live_thumb || ''
+        currentLiveThumb: r.current_live_thumb || '',
+        lastHeartbeat: 0
       };
     }
   }
@@ -590,7 +591,12 @@ class Database {
   }
 
   getPlayoutState() {
-    return { ...this.data.playoutState };
+    const ps = { ...this.data.playoutState };
+    if (!ps.lastHeartbeat || (Date.now() - ps.lastHeartbeat > 10000)) {
+      ps.fps = 0;
+      ps.bitrate = '0k';
+    }
+    return ps;
   }
 
   updatePlayoutState(updates) {

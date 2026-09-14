@@ -12,3 +12,4 @@ data/*.tmp
 data/epg_banner.png
 .DS_Store
 .browser_session/
+bots/

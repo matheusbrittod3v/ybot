@@ -60,19 +60,27 @@ class YouTubeMetadataUpdater {
   }
 
   /**
-   * Valida se um ID de vídeo existe e está acessível no YouTube
+   * Valida se uma transmissão está ativa ou pronta para transmitir (NÃO concluída/complete)
    */
-  async validateVideoExists(videoId) {
-    if (!videoId) return false;
+  async validateBroadcastAlive(broadcastId) {
+    if (!broadcastId) return false;
     const token = await this.getValidAccessToken();
     if (!token) return true;
     try {
-      const res = await fetch(`https://www.googleapis.com/youtube/v3/videos?part=id&id=${videoId}`, {
+      const res = await fetch(`https://www.googleapis.com/youtube/v3/liveBroadcasts?part=id,status&id=${broadcastId}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (!res.ok) return false;
       const data = await res.json();
-      return Array.isArray(data.items) && data.items.length > 0;
+      const broadcast = data.items?.[0];
+      if (!broadcast) return false;
+      const lifeCycle = broadcast.status?.lifeCycleStatus;
+      // Se a live foi encerrada (complete) ou revogada, ela NÃO está viva e não aceita mais stream!
+      if (lifeCycle === 'complete' || lifeCycle === 'revoked') {
+        console.warn(`[YouTube Updater] ⚠️ Transmissão "${broadcastId}" foi finalizada pelo YouTube (status: ${lifeCycle}). Descartando ID expirado...`);
+        return false;
+      }
+      return true;
     } catch (_) {
       return false;
     }
@@ -83,24 +91,24 @@ class YouTubeMetadataUpdater {
    * Prioriza transmissões ativas no canal; se não houver, valida o ID salvo.
    */
   async getActiveBroadcastId() {
-    // 1. Sempre tenta detectar primeiro se há uma transmissão 'active' (ao vivo agora) no canal
+    // 1. Sempre tenta detectar primeiro se há uma transmissão viva no canal
     const autoDetected = await this.detectAndSaveActiveBroadcast();
     if (autoDetected && autoDetected.id) {
       return autoDetected.id;
     }
 
-    // 2. Se não encontrou transmissão ativa na busca, verifica se o ID configurado ainda é válido
+    // 2. Se não encontrou na busca geral, verifica se o ID configurado ainda é válido e vivo
     const settings = db.getSettings();
     const configuredId = settings.youtubeBroadcastVideoId?.trim();
 
     if (configuredId) {
       const cleanId = extractYouTubeId(configuredId) || configuredId;
       if (cleanId && cleanId.length === 11) {
-        const isValid = await this.validateVideoExists(cleanId);
-        if (isValid) {
+        const isAlive = await this.validateBroadcastAlive(cleanId);
+        if (isAlive) {
           return cleanId;
         } else {
-          console.warn(`[YouTube Updater] ID configurado anteriormente "${cleanId}" não existe mais no canal. Limpando ID desatualizado...`);
+          console.warn(`[YouTube Updater] ID configurado anteriormente "${cleanId}" está encerrado ou inválido. Limpando ID desatualizado...`);
           db.updateSettings({ youtubeBroadcastVideoId: '' });
         }
       }
@@ -138,24 +146,24 @@ class YouTubeMetadataUpdater {
       });
 
       let data = res.ok ? await res.json() : null;
-      let broadcast = data?.items?.[0];
+      let broadcast = data?.items?.find(i => i.status?.lifeCycleStatus !== 'complete' && i.status?.lifeCycleStatus !== 'revoked');
 
       // 2. Se não encontrar ativa, busca próxima transmissão programada (upcoming)
       if (!broadcast) {
-        res = await fetch('https://www.googleapis.com/youtube/v3/liveBroadcasts?part=id,snippet,status,contentDetails&broadcastStatus=upcoming&maxResults=1', {
+        res = await fetch('https://www.googleapis.com/youtube/v3/liveBroadcasts?part=id,snippet,status,contentDetails&broadcastStatus=upcoming&maxResults=5', {
           headers: { Authorization: `Bearer ${token}` }
         });
         data = res.ok ? await res.json() : null;
-        broadcast = data?.items?.[0];
+        broadcast = data?.items?.find(i => i.status?.lifeCycleStatus !== 'complete' && i.status?.lifeCycleStatus !== 'revoked');
       }
 
-      // 3. Fallback: busca a transmissão mais recente do canal (all)
+      // 3. Fallback: busca transmissões recentes (all) e filtra as que NÃO estão em complete
       if (!broadcast) {
-        res = await fetch('https://www.googleapis.com/youtube/v3/liveBroadcasts?part=id,snippet,status,contentDetails&broadcastStatus=all&maxResults=1', {
+        res = await fetch('https://www.googleapis.com/youtube/v3/liveBroadcasts?part=id,snippet,status,contentDetails&broadcastStatus=all&maxResults=10', {
           headers: { Authorization: `Bearer ${token}` }
         });
         data = res.ok ? await res.json() : null;
-        broadcast = data?.items?.[0];
+        broadcast = data?.items?.find(i => i.status?.lifeCycleStatus !== 'complete' && i.status?.lifeCycleStatus !== 'revoked');
       }
 
       if (broadcast && broadcast.id) {

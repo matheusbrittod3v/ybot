@@ -304,9 +304,16 @@ function updatePlayoutDisplay(playout) {
   // Status Pill
   elLiveStatusPill.className = 'live-status-pill';
   if (playout.state === 'PLAYING') {
-    elLiveStatusText.textContent = 'NO AR AO VIVO';
-    elNowPlayingBadge.textContent = 'AO VIVO NO YOUTUBE';
-    elNowPlayingBadge.style.backgroundColor = 'rgba(239, 68, 68, 0.9)';
+    if (playout.fps > 0 || (playout.bitrate && playout.bitrate !== '0k')) {
+      elLiveStatusText.textContent = 'NO AR AO VIVO';
+      elNowPlayingBadge.textContent = 'AO VIVO NO AR';
+      elNowPlayingBadge.style.backgroundColor = 'rgba(239, 68, 68, 0.9)';
+    } else {
+      elLiveStatusPill.classList.add('standby');
+      elLiveStatusText.textContent = 'RECONECTANDO SINAL...';
+      elNowPlayingBadge.textContent = 'RECONEXÃO AUTOMÁTICA';
+      elNowPlayingBadge.style.backgroundColor = 'rgba(245, 158, 11, 0.9)';
+    }
     elLblStreamToggle.textContent = 'Parar Playout';
   } else if (playout.state === 'STANDBY') {
     elLiveStatusPill.classList.add('standby');

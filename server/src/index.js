@@ -95,6 +95,10 @@ setInterval(() => {
   if (wss.clients.size > 0) {
     const system = getSystemStats();
     const playout = db.getPlayoutState();
+    if (!streamer.isStreamingAlive()) {
+      playout.fps = 0;
+      playout.bitrate = '0k';
+    }
     broadcastWs('telemetry', { system, playout });
   }
 }, 3000);
