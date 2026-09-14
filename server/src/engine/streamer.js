@@ -910,13 +910,18 @@ class StreamerEngine {
       }
 
       // Parse métricas do FFmpeg: frame= 120 fps= 30 q=28.0 size= 1240kB time=00:00:04.00 bitrate=2540.2kbits/s speed=1.00x
-      const match = line.match(/fps=\s*([\d.]+).*time=\s*([\d:.]+).*bitrate=\s*([\d.]+kbits\/s)/);
+      // Suporta tanto saída padrão de arquivo quanto tee muxer (onde bitrate=N/A e size=N/A)
+      const frameMatch = line.match(/frame=\s*(\d+)/);
+      const fpsMatch = line.match(/fps=\s*([\d.]+)/);
+      const timeMatch = line.match(/time=\s*([\d:.]+)/);
+      const bitrateMatch = line.match(/bitrate=\s*([\d.]+kbits\/s)/);
       const speedMatch = line.match(/speed=\s*([\d.]+x)/);
-      if (match) {
+
+      if (frameMatch || fpsMatch || timeMatch) {
         this.lastFfmpegOutputTime = Date.now();
-        const fps = parseFloat(match[1]);
-        const timeStr = match[2];
-        const bitrate = match[3];
+        const fps = fpsMatch ? parseFloat(fpsMatch[1]) : 30;
+        const timeStr = timeMatch ? timeMatch[1] : '00:00:00';
+        const bitrate = bitrateMatch ? bitrateMatch[1] : (db.getSettings().videoBitrate || '4500k');
         const speed = speedMatch ? speedMatch[1] : '1.00x';
 
         let elapsedSec = 0;
